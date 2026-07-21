@@ -1,6 +1,11 @@
 package com.example.keycloak.numberverification;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
@@ -16,18 +21,12 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.util.JsonSerialization;
 
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 /**
  * Calls the backend verification endpoint and reduces its answer to a boolean.
  *
- * <p>The payload is assembled from configuration, so the account identifier sent
- * alongside the number can be the Keycloak user id, the username, or any custom
- * user attribute, under whatever JSON field name the backend expects.
+ * <p>The payload is assembled from configuration, so the account identifier sent alongside the
+ * number can be the Keycloak user id, the username, or any custom user attribute, under whatever
+ * JSON field name the backend expects.
  */
 public class VerificationClient {
 
@@ -43,18 +42,21 @@ public class VerificationClient {
      * @return true if the backend accepted the number for this account
      * @throws VerificationException if the backend is unreachable or returns something unusable
      */
-    public boolean verify(KeycloakSession session, RealmModel realm, UserModel user, String number) {
+    public boolean verify(
+            KeycloakSession session, RealmModel realm, UserModel user, String number) {
         if (config.getEndpoint() == null || config.getEndpoint().isBlank()) {
             throw new VerificationException("No verification endpoint configured");
         }
 
         Map<String, String> payload = buildPayload(realm, user, number);
-        LOG.debugf("Verifying number for %s=%s",
+        LOG.debugf(
+                "Verifying number for %s=%s",
                 config.getIdentifierField(), payload.get(config.getIdentifierField()));
 
-        HttpRequestBase request = config.getMethod() == VerificationConfig.Method.GET
-                ? buildGet(payload)
-                : buildPost(payload);
+        HttpRequestBase request =
+                config.getMethod() == VerificationConfig.Method.GET
+                        ? buildGet(payload)
+                        : buildPost(payload);
 
         if (config.getApiKey() != null && !config.getApiKey().isBlank()) {
             request.setHeader(config.getApiKeyHeader(), config.getApiKey());
@@ -64,16 +66,18 @@ public class VerificationClient {
         CloseableHttpClient http = session.getProvider(HttpClientProvider.class).getHttpClient();
         try (CloseableHttpResponse response = http.execute(request)) {
             int status = response.getStatusLine().getStatusCode();
-            String body = response.getEntity() == null
-                    ? ""
-                    : EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            String body =
+                    response.getEntity() == null
+                            ? ""
+                            : EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
 
             // Some APIs express "this number does not belong to this account" as 404.
             if (status == 404) {
                 return false;
             }
             if (status == 401 || status == 403) {
-                throw new VerificationException("Verification service rejected our credentials: " + status);
+                throw new VerificationException(
+                        "Verification service rejected our credentials: " + status);
             }
             if (status < 200 || status >= 300) {
                 throw new VerificationException("Verification service returned HTTP " + status);
@@ -91,9 +95,12 @@ public class VerificationClient {
 
         String identifier = UserFieldResolver.resolve(user, realm, config.getIdentifierSource());
         if (identifier == null || identifier.isBlank()) {
-            throw new VerificationException("Account identifier '" + config.getIdentifierSource()
-                    + "' is empty for user " + user.getId()
-                    + "; the backend cannot tell which account this number is for");
+            throw new VerificationException(
+                    "Account identifier '"
+                            + config.getIdentifierSource()
+                            + "' is empty for user "
+                            + user.getId()
+                            + "; the backend cannot tell which account this number is for");
         }
         payload.put(config.getIdentifierField(), identifier);
 
@@ -110,8 +117,9 @@ public class VerificationClient {
         HttpPost post = new HttpPost(config.getEndpoint());
         post.setHeader("Content-Type", "application/json");
         try {
-            post.setEntity(new StringEntity(
-                    JsonSerialization.writeValueAsString(payload), StandardCharsets.UTF_8));
+            post.setEntity(
+                    new StringEntity(
+                            JsonSerialization.writeValueAsString(payload), StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new VerificationException("Could not serialise verification payload", e);
         }
@@ -143,10 +151,10 @@ public class VerificationClient {
                 if (explicit.isBoolean()) {
                     return explicit.booleanValue();
                 }
-                throw new VerificationException("Response has no boolean at '"
-                        + config.getResponseField() + "'");
+                throw new VerificationException(
+                        "Response has no boolean at '" + config.getResponseField() + "'");
             }
-            for (String field : new String[]{"verified", "valid", "result", "success"}) {
+            for (String field : new String[] {"verified", "valid", "result", "success"}) {
                 JsonNode candidate = node.get(field);
                 if (candidate != null && candidate.isBoolean()) {
                     return candidate.booleanValue();

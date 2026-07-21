@@ -15,15 +15,16 @@ import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
- * Mandatory verification step: the user submits a number, we ask a backend REST API
- * whether that number is valid <em>for this specific account</em>, and only a
- * {@code true} answer lets the login continue.
+ * Mandatory verification step: the user submits a number, we ask a backend REST API whether that
+ * number is valid <em>for this specific account</em>, and only a {@code true} answer lets the login
+ * continue.
  */
 public class NumberVerificationRequiredAction implements RequiredActionProvider {
 
     private static final Logger LOG = Logger.getLogger(NumberVerificationRequiredAction.class);
 
     public static final String PROVIDER_ID = "verify-number";
+
     /** Set on the user once verification succeeds, so it never runs twice. */
     public static final String VERIFIED_ATTRIBUTE = "numberVerified";
 
@@ -39,17 +40,17 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
     }
 
     /**
-     * Effective configuration for this realm: whatever the admin saved in the console,
-     * falling back to the startup defaults for anything left blank.
+     * Effective configuration for this realm: whatever the admin saved in the console, falling back
+     * to the startup defaults for anything left blank.
      */
     private VerificationConfig configOf(RequiredActionContext context) {
         return VerificationConfig.resolve(defaults, context.getConfig());
     }
 
     /**
-     * Runs on every authentication. New accounts already carry the action because the
-     * factory is registered as a default action; this also catches pre-existing users
-     * who have never been verified.
+     * Runs on every authentication. New accounts already carry the action because the factory is
+     * registered as a default action; this also catches pre-existing users who have never been
+     * verified.
      */
     @Override
     public void evaluateTriggers(RequiredActionContext context) {
@@ -81,9 +82,11 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         RealmModel realm = context.getRealm();
         VerificationConfig config = configOf(context);
 
-        EventBuilder event = context.getEvent().clone()
-                .event(EventType.CUSTOM_REQUIRED_ACTION)
-                .detail(Details.CUSTOM_REQUIRED_ACTION, PROVIDER_ID);
+        EventBuilder event =
+                context.getEvent()
+                        .clone()
+                        .event(EventType.CUSTOM_REQUIRED_ACTION)
+                        .detail(Details.CUSTOM_REQUIRED_ACTION, PROVIDER_ID);
 
         if (number == null || number.trim().isEmpty()) {
             challengeWithError(context, "numberVerificationMissing");
@@ -93,7 +96,8 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
 
         // Optional local guard: refuse a number already bound to a different account.
         if (isClaimedByAnotherUser(context.getSession(), realm, user, number, config)) {
-            LOG.warnf("User %s submitted a number already bound to another account",
+            LOG.warnf(
+                    "User %s submitted a number already bound to another account",
                     user.getUsername());
             recordFailedAttempt(context.getAuthenticationSession());
             event.error("number_verification_already_used");
@@ -103,8 +107,9 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
 
         boolean verified;
         try {
-            verified = new VerificationClient(config)
-                    .verify(context.getSession(), realm, user, number);
+            verified =
+                    new VerificationClient(config)
+                            .verify(context.getSession(), realm, user, number);
         } catch (VerificationClient.VerificationException e) {
             LOG.errorf(e, "Number verification failed for user %s", user.getUsername());
             event.error("number_verification_unavailable");
@@ -115,7 +120,8 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
 
         if (!verified) {
             int attempts = recordFailedAttempt(context.getAuthenticationSession());
-            event.detail("attempts", String.valueOf(attempts)).error("number_verification_rejected");
+            event.detail("attempts", String.valueOf(attempts))
+                    .error("number_verification_rejected");
 
             if (config.getMaxAttempts() > 0 && attempts >= config.getMaxAttempts()) {
                 LOG.warnf("User %s exhausted number verification attempts", user.getUsername());
@@ -136,13 +142,16 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
     }
 
     /**
-     * Only meaningful when the verified number is stored as a user attribute. The
-     * backend remains the authority; this just stops two local accounts sharing a number
-     * if the backend does not enforce that itself.
+     * Only meaningful when the verified number is stored as a user attribute. The backend remains
+     * the authority; this just stops two local accounts sharing a number if the backend does not
+     * enforce that itself.
      */
-    private boolean isClaimedByAnotherUser(KeycloakSession session, RealmModel realm,
-                                           UserModel user, String number,
-                                           VerificationConfig config) {
+    private boolean isClaimedByAnotherUser(
+            KeycloakSession session,
+            RealmModel realm,
+            UserModel user,
+            String number,
+            VerificationConfig config) {
         String attribute = config.getStoreAttribute();
         if (!config.isEnforceUnique() || attribute == null || attribute.isBlank()) {
             return false;
@@ -153,15 +162,12 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
     }
 
     private void challengeWithError(RequiredActionContext context, String messageKey) {
-        Response challenge = form(context)
-                .setError(messageKey)
-                .createForm(FORM_TEMPLATE);
+        Response challenge = form(context).setError(messageKey).createForm(FORM_TEMPLATE);
         context.challenge(challenge);
     }
 
     private LoginFormsProvider form(RequiredActionContext context) {
-        return context.form()
-                .setAttribute("username", context.getUser().getUsername());
+        return context.form().setAttribute("username", context.getUser().getUsername());
     }
 
     private int recordFailedAttempt(AuthenticationSessionModel authSession) {

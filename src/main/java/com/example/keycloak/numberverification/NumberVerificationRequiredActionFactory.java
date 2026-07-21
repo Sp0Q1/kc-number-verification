@@ -1,5 +1,9 @@
 package com.example.keycloak.numberverification;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.List;
+import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionFactory;
@@ -11,11 +15,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.RequiredActionConfigModel;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
-
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.List;
-import java.util.Map;
 
 public class NumberVerificationRequiredActionFactory implements RequiredActionFactory {
 
@@ -32,40 +31,59 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         String endpoint = get(scope, VerificationConfig.ENDPOINT, "ENDPOINT", null);
         String methodRaw = get(scope, VerificationConfig.METHOD, "METHOD", "POST");
         String apiKey = get(scope, VerificationConfig.API_KEY, "API_KEY", null);
-        String apiKeyHeader = get(scope, VerificationConfig.API_KEY_HEADER,
-                "API_KEY_HEADER", "Authorization");
+        String apiKeyHeader =
+                get(scope, VerificationConfig.API_KEY_HEADER, "API_KEY_HEADER", "Authorization");
 
         String numberField = get(scope, VerificationConfig.NUMBER_FIELD, "NUMBER_FIELD", "number");
-        String identifierSource = get(scope, VerificationConfig.IDENTIFIER_SOURCE,
-                "IDENTIFIER_SOURCE", "id");
-        String identifierField = get(scope, VerificationConfig.IDENTIFIER_FIELD, "IDENTIFIER_FIELD",
-                UserFieldResolver.defaultFieldName(identifierSource));
-        String extraRaw = get(scope, VerificationConfig.EXTRA_FIELDS,
-                "EXTRA_FIELDS", "username,email,realm");
-        String responseField = get(scope, VerificationConfig.RESPONSE_FIELD, "RESPONSE_FIELD", null);
+        String identifierSource =
+                get(scope, VerificationConfig.IDENTIFIER_SOURCE, "IDENTIFIER_SOURCE", "id");
+        String identifierField =
+                get(
+                        scope,
+                        VerificationConfig.IDENTIFIER_FIELD,
+                        "IDENTIFIER_FIELD",
+                        UserFieldResolver.defaultFieldName(identifierSource));
+        String extraRaw =
+                get(scope, VerificationConfig.EXTRA_FIELDS, "EXTRA_FIELDS", "username,email,realm");
+        String responseField =
+                get(scope, VerificationConfig.RESPONSE_FIELD, "RESPONSE_FIELD", null);
 
-        String storeAttribute = get(scope, VerificationConfig.STORE_ATTRIBUTE,
-                "STORE_ATTRIBUTE", null);
-        boolean enforceUnique = Boolean.parseBoolean(
-                get(scope, VerificationConfig.ENFORCE_UNIQUE, "ENFORCE_UNIQUE", "false"));
-        int maxAttempts = VerificationConfig.parseInt(
-                get(scope, VerificationConfig.MAX_ATTEMPTS, "MAX_ATTEMPTS", "5"), 5);
+        String storeAttribute =
+                get(scope, VerificationConfig.STORE_ATTRIBUTE, "STORE_ATTRIBUTE", null);
+        boolean enforceUnique =
+                Boolean.parseBoolean(
+                        get(scope, VerificationConfig.ENFORCE_UNIQUE, "ENFORCE_UNIQUE", "false"));
+        int maxAttempts =
+                VerificationConfig.parseInt(
+                        get(scope, VerificationConfig.MAX_ATTEMPTS, "MAX_ATTEMPTS", "5"), 5);
 
-        VerificationConfig.Method method = VerificationConfig.parseMethod(
-                methodRaw, VerificationConfig.Method.POST);
+        VerificationConfig.Method method =
+                VerificationConfig.parseMethod(methodRaw, VerificationConfig.Method.POST);
 
         Map<String, String> extraFields = VerificationConfig.parseFieldList(extraRaw);
         extraFields.remove(identifierField);
 
-        this.defaults = new VerificationConfig(endpoint, method, apiKey, apiKeyHeader,
-                numberField, identifierField, identifierSource, extraFields, responseField,
-                maxAttempts, enforceUnique, storeAttribute);
+        this.defaults =
+                new VerificationConfig(
+                        endpoint,
+                        method,
+                        apiKey,
+                        apiKeyHeader,
+                        numberField,
+                        identifierField,
+                        identifierSource,
+                        extraFields,
+                        responseField,
+                        maxAttempts,
+                        enforceUnique,
+                        storeAttribute);
 
         if (endpoint == null || endpoint.isBlank()) {
-            LOG.infof("No default verification endpoint set via %sENDPOINT; each realm must "
+            LOG.infof(
+                    "No default verification endpoint set via %sENDPOINT; each realm must "
                             + "configure one in the admin console under Authentication -> "
-                            + "Required actions -> %s.", ENV_PREFIX,
-                    NumberVerificationRequiredAction.PROVIDER_ID);
+                            + "Required actions -> %s.",
+                    ENV_PREFIX, NumberVerificationRequiredAction.PROVIDER_ID);
         } else {
             LOG.infof("Default number verification endpoint: %s %s", method, endpoint);
         }
@@ -91,104 +109,112 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
     public List<ProviderConfigProperty> getConfigMetadata() {
         return ProviderConfigurationBuilder.create()
                 .property()
-                    .name(VerificationConfig.ENDPOINT)
-                    .label("Verification endpoint")
-                    .helpText("Full URL of the REST API that verifies a number for an account. "
-                            + "Leave blank to use the server-wide default.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .add()
+                .name(VerificationConfig.ENDPOINT)
+                .label("Verification endpoint")
+                .helpText(
+                        "Full URL of the REST API that verifies a number for an account. "
+                                + "Leave blank to use the server-wide default.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
                 .property()
-                    .name(VerificationConfig.METHOD)
-                    .label("HTTP method")
-                    .helpText("POST sends a JSON body; GET sends query parameters.")
-                    .type(ProviderConfigProperty.LIST_TYPE)
-                    .options("POST", "GET")
-                    .defaultValue("POST")
-                    .add()
+                .name(VerificationConfig.METHOD)
+                .label("HTTP method")
+                .helpText("POST sends a JSON body; GET sends query parameters.")
+                .type(ProviderConfigProperty.LIST_TYPE)
+                .options("POST", "GET")
+                .defaultValue("POST")
+                .add()
                 .property()
-                    .name(VerificationConfig.API_KEY)
-                    .label("API key")
-                    .helpText("Optional credential sent with each request. Stored in the realm "
-                            + "configuration, so prefer the server-wide default for secrets.")
-                    .type(ProviderConfigProperty.PASSWORD)
-                    .secret(true)
-                    .add()
+                .name(VerificationConfig.API_KEY)
+                .label("API key")
+                .helpText(
+                        "Optional credential sent with each request. Stored in the realm "
+                                + "configuration, so prefer the server-wide default for secrets.")
+                .type(ProviderConfigProperty.PASSWORD)
+                .secret(true)
+                .add()
                 .property()
-                    .name(VerificationConfig.API_KEY_HEADER)
-                    .label("API key header")
-                    .helpText("Header the API key is sent in. Defaults to Authorization.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .defaultValue("Authorization")
-                    .add()
+                .name(VerificationConfig.API_KEY_HEADER)
+                .label("API key header")
+                .helpText("Header the API key is sent in. Defaults to Authorization.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("Authorization")
+                .add()
                 .property()
-                    .name(VerificationConfig.IDENTIFIER_SOURCE)
-                    .label("Account identifier source")
-                    .helpText("Which user property identifies the account to the backend: "
-                            + "id, username, email, firstName, lastName, realm, or "
-                            + "attr:<name> for a custom user attribute. 'id' is the Keycloak "
-                            + "UUID and is the safest choice - it never changes.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .defaultValue("id")
-                    .add()
+                .name(VerificationConfig.IDENTIFIER_SOURCE)
+                .label("Account identifier source")
+                .helpText(
+                        "Which user property identifies the account to the backend: "
+                                + "id, username, email, firstName, lastName, realm, or "
+                                + "attr:<name> for a custom user attribute. 'id' is the Keycloak "
+                                + "UUID and is the safest choice - it never changes.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("id")
+                .add()
                 .property()
-                    .name(VerificationConfig.IDENTIFIER_FIELD)
-                    .label("Account identifier field name")
-                    .helpText("JSON/query field the identifier is sent under. Derived from the "
-                            + "source if left blank.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .add()
+                .name(VerificationConfig.IDENTIFIER_FIELD)
+                .label("Account identifier field name")
+                .helpText(
+                        "JSON/query field the identifier is sent under. Derived from the "
+                                + "source if left blank.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
                 .property()
-                    .name(VerificationConfig.NUMBER_FIELD)
-                    .label("Number field name")
-                    .helpText("JSON/query field the submitted number is sent under.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .defaultValue("number")
-                    .add()
+                .name(VerificationConfig.NUMBER_FIELD)
+                .label("Number field name")
+                .helpText("JSON/query field the submitted number is sent under.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("number")
+                .add()
                 .property()
-                    .name(VerificationConfig.EXTRA_FIELDS)
-                    .label("Additional fields")
-                    .helpText("Comma-separated extra fields to send, e.g. "
-                            + "username,email,tenant=attr:tenantId. Same source syntax as the "
-                            + "identifier.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .add()
+                .name(VerificationConfig.EXTRA_FIELDS)
+                .label("Additional fields")
+                .helpText(
+                        "Comma-separated extra fields to send, e.g. "
+                                + "username,email,tenant=attr:tenantId. Same source syntax as the "
+                                + "identifier.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
                 .property()
-                    .name(VerificationConfig.RESPONSE_FIELD)
-                    .label("Response field")
-                    .helpText("Field holding the boolean result, or a JSON pointer such as "
-                            + "/data/verified. Left blank, common names are auto-detected.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .add()
+                .name(VerificationConfig.RESPONSE_FIELD)
+                .label("Response field")
+                .helpText(
+                        "Field holding the boolean result, or a JSON pointer such as "
+                                + "/data/verified. Left blank, common names are auto-detected.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
                 .property()
-                    .name(VerificationConfig.MAX_ATTEMPTS)
-                    .label("Max attempts")
-                    .helpText("Failed attempts before the login is aborted. 0 means unlimited.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .defaultValue("5")
-                    .add()
+                .name(VerificationConfig.MAX_ATTEMPTS)
+                .label("Max attempts")
+                .helpText("Failed attempts before the login is aborted. 0 means unlimited.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("5")
+                .add()
                 .property()
-                    .name(VerificationConfig.STORE_ATTRIBUTE)
-                    .label("Store number as attribute")
-                    .helpText("If set, the verified number is saved on the user under this "
-                            + "attribute name. Leave blank if the number is sensitive - it is "
-                            + "stored in clear text.")
-                    .type(ProviderConfigProperty.STRING_TYPE)
-                    .add()
+                .name(VerificationConfig.STORE_ATTRIBUTE)
+                .label("Store number as attribute")
+                .helpText(
+                        "If set, the verified number is saved on the user under this "
+                                + "attribute name. Leave blank if the number is sensitive - it is "
+                                + "stored in clear text.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
                 .property()
-                    .name(VerificationConfig.ENFORCE_UNIQUE)
-                    .label("Enforce local uniqueness")
-                    .helpText("Reject a number already stored against another account in this "
-                            + "realm. Requires 'Store number as attribute'.")
-                    .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                    .defaultValue("false")
-                    .add()
+                .name(VerificationConfig.ENFORCE_UNIQUE)
+                .label("Enforce local uniqueness")
+                .helpText(
+                        "Reject a number already stored against another account in this "
+                                + "realm. Requires 'Store number as attribute'.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("false")
+                .add()
                 .build();
     }
 
     /** Runs when an admin saves the form, so bad values are rejected at edit time. */
     @Override
-    public void validateConfig(KeycloakSession session, RealmModel realm,
-                               RequiredActionConfigModel model) {
+    public void validateConfig(
+            KeycloakSession session, RealmModel realm, RequiredActionConfigModel model) {
         RequiredActionFactory.super.validateConfig(session, realm, model);
 
         String endpoint = model.getConfigValue(VerificationConfig.ENDPOINT);
@@ -207,21 +233,25 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 throw new ModelValidationException("Verification endpoint is not a valid URL");
             }
         } else if (defaults.getEndpoint() == null || defaults.getEndpoint().isBlank()) {
-            throw new ModelValidationException("A verification endpoint is required: no "
-                    + "server-wide default is configured for this server");
+            throw new ModelValidationException(
+                    "A verification endpoint is required: no "
+                            + "server-wide default is configured for this server");
         }
 
         String method = model.getConfigValue(VerificationConfig.METHOD);
-        if (method != null && !method.isBlank()
+        if (method != null
+                && !method.isBlank()
                 && VerificationConfig.parseMethod(method, null) == null) {
             throw new ModelValidationException("HTTP method must be POST or GET");
         }
 
-        validateSource(model.getConfigValue(VerificationConfig.IDENTIFIER_SOURCE),
+        validateSource(
+                model.getConfigValue(VerificationConfig.IDENTIFIER_SOURCE),
                 "Account identifier source");
         String extras = model.getConfigValue(VerificationConfig.EXTRA_FIELDS);
         if (extras != null && !extras.isBlank()) {
-            VerificationConfig.parseFieldList(extras).values()
+            VerificationConfig.parseFieldList(extras)
+                    .values()
                     .forEach(spec -> validateSource(spec, "Additional fields"));
         }
 
@@ -239,8 +269,10 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         boolean enforceUnique =
                 Boolean.parseBoolean(model.getConfigValue(VerificationConfig.ENFORCE_UNIQUE));
         String storeAttribute = model.getConfigValue(VerificationConfig.STORE_ATTRIBUTE);
-        if (enforceUnique && (storeAttribute == null || storeAttribute.isBlank())
-                && (defaults.getStoreAttribute() == null || defaults.getStoreAttribute().isBlank())) {
+        if (enforceUnique
+                && (storeAttribute == null || storeAttribute.isBlank())
+                && (defaults.getStoreAttribute() == null
+                        || defaults.getStoreAttribute().isBlank())) {
             throw new ModelValidationException(
                     "Enforcing local uniqueness requires 'Store number as attribute' to be set");
         }
@@ -251,7 +283,11 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
             return;
         }
         String s = spec.trim();
-        if (s.regionMatches(true, 0, UserFieldResolver.ATTR_PREFIX, 0,
+        if (s.regionMatches(
+                true,
+                0,
+                UserFieldResolver.ATTR_PREFIX,
+                0,
                 UserFieldResolver.ATTR_PREFIX.length())) {
             if (s.substring(UserFieldResolver.ATTR_PREFIX.length()).isBlank()) {
                 throw new ModelValidationException(label + ": 'attr:' needs an attribute name");
@@ -260,8 +296,12 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         }
         if (!List.of("id", "userId", "username", "email", "firstName", "lastName", "realm")
                 .contains(s)) {
-            throw new ModelValidationException(label + ": unknown source '" + spec
-                    + "'. Use id, username, email, firstName, lastName, realm or attr:<name>.");
+            throw new ModelValidationException(
+                    label
+                            + ": unknown source '"
+                            + spec
+                            + "'. Use id, username, email, firstName, lastName, realm or"
+                            + " attr:<name>.");
         }
     }
 
