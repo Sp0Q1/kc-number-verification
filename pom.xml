@@ -72,23 +72,27 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
         <version>3.5.0</version>
+        <!--
+                    Rules live at plugin level (not inside the execution) so that both
+                    the lifecycle-bound run and a direct 'mvn enforcer:enforce' see them.
+                -->
+        <configuration>
+          <rules>
+            <requireMavenVersion>
+              <version>[3.6.3,)</version>
+            </requireMavenVersion>
+            <requireJavaVersion>
+              <version>[17,)</version>
+            </requireJavaVersion>
+            <banDuplicatePomDependencyVersions/>
+          </rules>
+        </configuration>
         <executions>
           <execution>
             <id>enforce-build-hygiene</id>
             <goals>
               <goal>enforce</goal>
             </goals>
-            <configuration>
-              <rules>
-                <requireMavenVersion>
-                  <version>[3.6.3,)</version>
-                </requireMavenVersion>
-                <requireJavaVersion>
-                  <version>[17,)</version>
-                </requireJavaVersion>
-                <banDuplicatePomDependencyVersions/>
-              </rules>
-            </configuration>
           </execution>
         </executions>
       </plugin>
