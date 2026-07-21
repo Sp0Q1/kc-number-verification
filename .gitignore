@@ -1,0 +1,41 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Build output
+*.jar
+*.war
+*.class
+
+# Semgrep / scanning output
+semgrep.sarif
+*.sarif
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+nbproject/
+.nb-gradle/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+*.log
+*.tmp

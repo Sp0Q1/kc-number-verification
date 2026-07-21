@@ -1,0 +1,49 @@
+name: CodeQL
+
+# GitHub's native static analysis. Results appear under the repository's
+# Security -> Code scanning tab. Free for public repos and for private repos on
+# plans that include GitHub Advanced Security.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Weekly, so newly published CodeQL queries catch issues in unchanged code.
+    - cron: "27 3 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze Java
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload results to code scanning
+      contents: read
+      actions: read
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          # 'security-and-quality' adds maintainability/quality queries on top of
+          # the default security set.
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"

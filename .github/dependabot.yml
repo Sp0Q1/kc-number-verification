@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # Java dependencies (Keycloak API, HttpClient, JAX-RS, build plugins).
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - java
+    groups:
+      # Keep the Keycloak artifacts moving together; they are version-locked.
+      keycloak:
+        patterns:
+          - "org.keycloak:*"
+      # Everything else, patch/minor bundled to cut noise.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    # Keycloak is 'provided' and pinned to the runtime; let Dependabot propose
+    # bumps but review them against the cluster's actual Keycloak version before
+    # merging. Uncomment to have Dependabot leave the major line alone:
+    # ignore:
+    #   - dependency-name: "org.keycloak:*"
+    #     update-types: ["version-update:semver-major"]
+
+  # The GitHub Actions used by the workflows below.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      actions:
+        patterns:
+          - "*"

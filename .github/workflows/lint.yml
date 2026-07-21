@@ -1,0 +1,37 @@
+name: Lint
+
+# Non-packaging checks: code formatting (Spotless) and build hygiene (Enforcer).
+# Kept separate from the JAR build so a formatting nit never blocks producing a
+# usable artifact.
+#
+# If this fails on formatting, run 'mvn spotless:apply' locally, commit, and push.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Check formatting (Spotless)
+        run: mvn --batch-mode --no-transfer-progress spotless:check
+
+      - name: Check build hygiene (Enforcer)
+        run: mvn --batch-mode --no-transfer-progress enforcer:enforce
