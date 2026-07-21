@@ -12,7 +12,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- Match this to the Keycloak version you deploy to. -->
-    <keycloak.version>26.0.7</keycloak.version>
+    <keycloak.version>26.7.0</keycloak.version>
   </properties>
 
   <dependencies>
@@ -60,7 +60,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
+        <version>3.15.0</version>
       </plugin>
 
       <!--
@@ -71,7 +71,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
-        <version>3.5.0</version>
+        <version>3.6.3</version>
         <!--
                     Rules live at plugin level (not inside the execution) so that both
                     the lifecycle-bound run and a direct 'mvn enforcer:enforce' see them.
