@@ -1,17 +1,16 @@
 package com.example.keycloak.numberverification;
 
-import org.keycloak.models.RequiredActionConfigModel;
-
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.keycloak.models.RequiredActionConfigModel;
 
 /**
  * Configuration for the verification call.
  *
- * <p>Two layers: values parsed once at startup from environment variables / SPI options
- * act as the defaults, and each realm may override any of them through the admin
- * console. {@link #resolve(VerificationConfig, RequiredActionConfigModel)} merges the two.
+ * <p>Two layers: values parsed once at startup from environment variables / SPI options act as the
+ * defaults, and each realm may override any of them through the admin console. {@link
+ * #resolve(VerificationConfig, RequiredActionConfigModel)} merges the two.
  */
 public class VerificationConfig {
 
@@ -30,7 +29,10 @@ public class VerificationConfig {
     public static final String STORE_ATTRIBUTE = "storeAttribute";
     public static final String ENFORCE_UNIQUE = "enforceUnique";
 
-    public enum Method { POST, GET }
+    public enum Method {
+        POST,
+        GET
+    }
 
     private final String endpoint;
     private final Method method;
@@ -45,10 +47,19 @@ public class VerificationConfig {
     private final boolean enforceUnique;
     private final String storeAttribute;
 
-    public VerificationConfig(String endpoint, Method method, String apiKey, String apiKeyHeader,
-                              String numberField, String identifierField, String identifierSource,
-                              Map<String, String> extraFields, String responseField,
-                              int maxAttempts, boolean enforceUnique, String storeAttribute) {
+    public VerificationConfig(
+            String endpoint,
+            Method method,
+            String apiKey,
+            String apiKeyHeader,
+            String numberField,
+            String identifierField,
+            String identifierSource,
+            Map<String, String> extraFields,
+            String responseField,
+            int maxAttempts,
+            boolean enforceUnique,
+            String storeAttribute) {
         this.endpoint = endpoint;
         this.method = method;
         this.apiKey = apiKey;
@@ -64,14 +75,14 @@ public class VerificationConfig {
     }
 
     /**
-     * Overlays whatever the realm admin configured in the console onto the startup
-     * defaults. A blank or absent console value leaves the default in place, so an
-     * existing environment-variable deployment keeps working untouched.
+     * Overlays whatever the realm admin configured in the console onto the startup defaults. A
+     * blank or absent console value leaves the default in place, so an existing
+     * environment-variable deployment keeps working untouched.
      *
      * @param model the realm's stored config, or {@code null} if nothing has been saved
      */
-    public static VerificationConfig resolve(VerificationConfig defaults,
-                                             RequiredActionConfigModel model) {
+    public static VerificationConfig resolve(
+            VerificationConfig defaults, RequiredActionConfigModel model) {
         if (model == null) {
             return defaults;
         }
@@ -87,40 +98,49 @@ public class VerificationConfig {
         int maxAttempts = parseInt(str(model, MAX_ATTEMPTS, null), defaults.maxAttempts);
 
         String enforceRaw = str(model, ENFORCE_UNIQUE, null);
-        boolean enforceUnique = enforceRaw == null
-                ? defaults.enforceUnique
-                : Boolean.parseBoolean(enforceRaw);
+        boolean enforceUnique =
+                enforceRaw == null ? defaults.enforceUnique : Boolean.parseBoolean(enforceRaw);
 
         String identifierSource = str(model, IDENTIFIER_SOURCE, defaults.identifierSource);
         String identifierField = str(model, IDENTIFIER_FIELD, null);
         if (identifierField == null) {
             // No explicit field name: keep the default only if the source is unchanged,
             // otherwise derive a sensible name from the new source.
-            identifierField = identifierSource.equals(defaults.identifierSource)
-                    ? defaults.identifierField
-                    : UserFieldResolver.defaultFieldName(identifierSource);
+            identifierField =
+                    identifierSource.equals(defaults.identifierSource)
+                            ? defaults.identifierField
+                            : UserFieldResolver.defaultFieldName(identifierSource);
         }
 
         // An explicitly emptied list means "send nothing extra", which is different
         // from the key being absent.
         String extraRaw = raw(model, EXTRA_FIELDS);
-        Map<String, String> extraFields = extraRaw == null
-                ? defaults.extraFields
-                : parseFieldList(extraRaw);
+        Map<String, String> extraFields =
+                extraRaw == null ? defaults.extraFields : parseFieldList(extraRaw);
         extraFields = new LinkedHashMap<>(extraFields);
         extraFields.remove(identifierField);
 
-        return new VerificationConfig(endpoint, method, apiKey, apiKeyHeader, numberField,
-                identifierField, identifierSource, extraFields, responseField,
-                maxAttempts, enforceUnique, storeAttribute);
+        return new VerificationConfig(
+                endpoint,
+                method,
+                apiKey,
+                apiKeyHeader,
+                numberField,
+                identifierField,
+                identifierSource,
+                extraFields,
+                responseField,
+                maxAttempts,
+                enforceUnique,
+                storeAttribute);
     }
 
     /**
      * Reads a single value from the stored realm config.
      *
-     * <p>Note: if this fails to compile on your Keycloak version, swap it for
-     * {@code model.getConfig().get(key)} - the accessor was introduced alongside
-     * configurable required actions in Keycloak 25.
+     * <p>Note: if this fails to compile on your Keycloak version, swap it for {@code
+     * model.getConfig().get(key)} - the accessor was introduced alongside configurable required
+     * actions in Keycloak 25.
      */
     private static String raw(RequiredActionConfigModel model, String key) {
         return model.getConfigValue(key);
@@ -154,8 +174,8 @@ public class VerificationConfig {
     }
 
     /**
-     * Parses a spec list such as {@code "username,email,tenant=attr:tenantId"} into an
-     * ordered map of JSON field name -> source spec.
+     * Parses a spec list such as {@code "username,email,tenant=attr:tenantId"} into an ordered map
+     * of JSON field name -> source spec.
      */
     public static Map<String, String> parseFieldList(String raw) {
         Map<String, String> result = new LinkedHashMap<>();

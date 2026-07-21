@@ -7,19 +7,19 @@ import org.keycloak.models.UserModel;
  * Turns a configuration "source spec" into a concrete value taken from the user.
  *
  * <p>Supported specs:
+ *
  * <ul>
- *   <li>{@code id} – the Keycloak user UUID (stable, never reused)</li>
- *   <li>{@code username}, {@code email}, {@code firstName}, {@code lastName}</li>
- *   <li>{@code realm} – the realm name</li>
- *   <li>{@code attr:<name>} – any custom user attribute, e.g. {@code attr:employeeNumber}</li>
+ *   <li>{@code id} – the Keycloak user UUID (stable, never reused)
+ *   <li>{@code username}, {@code email}, {@code firstName}, {@code lastName}
+ *   <li>{@code realm} – the realm name
+ *   <li>{@code attr:<name>} – any custom user attribute, e.g. {@code attr:employeeNumber}
  * </ul>
  */
 public final class UserFieldResolver {
 
     public static final String ATTR_PREFIX = "attr:";
 
-    private UserFieldResolver() {
-    }
+    private UserFieldResolver() {}
 
     public static String resolve(UserModel user, RealmModel realm, String spec) {
         if (spec == null || spec.isBlank()) {
