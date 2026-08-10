@@ -12,7 +12,7 @@
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- Match this to the Keycloak version you deploy to. -->
-    <keycloak.version>26.7.0</keycloak.version>
+    <keycloak.version>26.7.1</keycloak.version>
   </properties>
 
   <dependencies>
@@ -101,7 +101,7 @@
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <version>3.8.0</version>
+        <version>3.9.0</version>
         <configuration>
           <java>
             <googleJavaFormat>
