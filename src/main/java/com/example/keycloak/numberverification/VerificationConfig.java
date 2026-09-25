@@ -12,7 +12,21 @@ import org.keycloak.models.RequiredActionConfigModel;
  * defaults, and each realm may override any of them through the admin console. {@link
  * #resolve(VerificationConfig, RequiredActionConfigModel)} merges the two.
  */
-public class VerificationConfig {
+public record VerificationConfig(
+        String endpoint,
+        Method method,
+        String apiKey,
+        String apiKeyHeader,
+        String numberField,
+        String identifierField,
+        String identifierSource,
+        Map<String, String> extraFields,
+        String responseField,
+        int maxAttempts,
+        int maxLength,
+        boolean enforceUnique,
+        String storeAttribute,
+        boolean applyToExistingUsers) {
 
     // Config keys - these are the property names shown in the admin console and used
     // by the Admin REST API.
@@ -26,52 +40,33 @@ public class VerificationConfig {
     public static final String EXTRA_FIELDS = "extraFields";
     public static final String RESPONSE_FIELD = "responseField";
     public static final String MAX_ATTEMPTS = "maxAttempts";
+    public static final String MAX_LENGTH = "maxLength";
     public static final String STORE_ATTRIBUTE = "storeAttribute";
     public static final String ENFORCE_UNIQUE = "enforceUnique";
+    public static final String APPLY_TO_EXISTING_USERS = "applyToExistingUsers";
+
+    public static final int DEFAULT_MAX_ATTEMPTS = 5;
+    public static final int DEFAULT_MAX_LENGTH = 64;
 
     public enum Method {
         POST,
         GET
     }
 
-    private final String endpoint;
-    private final Method method;
-    private final String apiKey;
-    private final String apiKeyHeader;
-    private final String numberField;
-    private final String identifierField;
-    private final String identifierSource;
-    private final Map<String, String> extraFields;
-    private final String responseField;
-    private final int maxAttempts;
-    private final boolean enforceUnique;
-    private final String storeAttribute;
+    public VerificationConfig {
+        extraFields = Collections.unmodifiableMap(new LinkedHashMap<>(extraFields));
+    }
 
-    public VerificationConfig(
-            String endpoint,
-            Method method,
-            String apiKey,
-            String apiKeyHeader,
-            String numberField,
-            String identifierField,
-            String identifierSource,
-            Map<String, String> extraFields,
-            String responseField,
-            int maxAttempts,
-            boolean enforceUnique,
-            String storeAttribute) {
-        this.endpoint = endpoint;
-        this.method = method;
-        this.apiKey = apiKey;
-        this.apiKeyHeader = apiKeyHeader;
-        this.numberField = numberField;
-        this.identifierField = identifierField;
-        this.identifierSource = identifierSource;
-        this.extraFields = Collections.unmodifiableMap(new LinkedHashMap<>(extraFields));
-        this.responseField = responseField;
-        this.maxAttempts = maxAttempts;
-        this.enforceUnique = enforceUnique;
-        this.storeAttribute = storeAttribute;
+    public boolean hasEndpoint() {
+        return isSet(endpoint);
+    }
+
+    public boolean hasApiKey() {
+        return isSet(apiKey);
+    }
+
+    public boolean storesNumber() {
+        return isSet(storeAttribute);
     }
 
     /**
@@ -87,20 +82,6 @@ public class VerificationConfig {
             return defaults;
         }
 
-        String endpoint = str(model, ENDPOINT, defaults.endpoint);
-        String apiKey = str(model, API_KEY, defaults.apiKey);
-        String apiKeyHeader = str(model, API_KEY_HEADER, defaults.apiKeyHeader);
-        String numberField = str(model, NUMBER_FIELD, defaults.numberField);
-        String responseField = str(model, RESPONSE_FIELD, defaults.responseField);
-        String storeAttribute = str(model, STORE_ATTRIBUTE, defaults.storeAttribute);
-
-        Method method = parseMethod(str(model, METHOD, null), defaults.method);
-        int maxAttempts = parseInt(str(model, MAX_ATTEMPTS, null), defaults.maxAttempts);
-
-        String enforceRaw = str(model, ENFORCE_UNIQUE, null);
-        boolean enforceUnique =
-                enforceRaw == null ? defaults.enforceUnique : Boolean.parseBoolean(enforceRaw);
-
         String identifierSource = str(model, IDENTIFIER_SOURCE, defaults.identifierSource);
         String identifierField = str(model, IDENTIFIER_FIELD, null);
         if (identifierField == null) {
@@ -114,45 +95,45 @@ public class VerificationConfig {
 
         // An explicitly emptied list means "send nothing extra", which is different
         // from the key being absent.
-        String extraRaw = raw(model, EXTRA_FIELDS);
+        String extraRaw = model.getConfigValue(EXTRA_FIELDS);
         Map<String, String> extraFields =
-                extraRaw == null ? defaults.extraFields : parseFieldList(extraRaw);
-        extraFields = new LinkedHashMap<>(extraFields);
+                new LinkedHashMap<>(
+                        extraRaw == null ? defaults.extraFields : parseFieldList(extraRaw));
         extraFields.remove(identifierField);
 
         return new VerificationConfig(
-                endpoint,
-                method,
-                apiKey,
-                apiKeyHeader,
-                numberField,
+                str(model, ENDPOINT, defaults.endpoint),
+                parseMethod(str(model, METHOD, null), defaults.method),
+                str(model, API_KEY, defaults.apiKey),
+                str(model, API_KEY_HEADER, defaults.apiKeyHeader),
+                str(model, NUMBER_FIELD, defaults.numberField),
                 identifierField,
                 identifierSource,
                 extraFields,
-                responseField,
-                maxAttempts,
-                enforceUnique,
-                storeAttribute);
-    }
-
-    /**
-     * Reads a single value from the stored realm config.
-     *
-     * <p>Note: if this fails to compile on your Keycloak version, swap it for {@code
-     * model.getConfig().get(key)} - the accessor was introduced alongside configurable required
-     * actions in Keycloak 25.
-     */
-    private static String raw(RequiredActionConfigModel model, String key) {
-        return model.getConfigValue(key);
+                str(model, RESPONSE_FIELD, defaults.responseField),
+                parseInt(str(model, MAX_ATTEMPTS, null), defaults.maxAttempts),
+                parseInt(str(model, MAX_LENGTH, null), defaults.maxLength),
+                bool(model, ENFORCE_UNIQUE, defaults.enforceUnique),
+                str(model, STORE_ATTRIBUTE, defaults.storeAttribute),
+                bool(model, APPLY_TO_EXISTING_USERS, defaults.applyToExistingUsers));
     }
 
     private static String str(RequiredActionConfigModel model, String key, String fallback) {
         String value = model.getConfigValue(key);
-        return (value == null || value.isBlank()) ? fallback : value;
+        return isSet(value) ? value : fallback;
+    }
+
+    private static boolean bool(RequiredActionConfigModel model, String key, boolean fallback) {
+        String value = str(model, key, null);
+        return value == null ? fallback : Boolean.parseBoolean(value.trim());
+    }
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isBlank();
     }
 
     public static Method parseMethod(String raw, Method fallback) {
-        if (raw == null || raw.isBlank()) {
+        if (!isSet(raw)) {
             return fallback;
         }
         try {
@@ -163,7 +144,7 @@ public class VerificationConfig {
     }
 
     public static int parseInt(String raw, int fallback) {
-        if (raw == null || raw.isBlank()) {
+        if (!isSet(raw)) {
             return fallback;
         }
         try {
@@ -179,7 +160,7 @@ public class VerificationConfig {
      */
     public static Map<String, String> parseFieldList(String raw) {
         Map<String, String> result = new LinkedHashMap<>();
-        if (raw == null || raw.isBlank()) {
+        if (!isSet(raw)) {
             return result;
         }
         for (String entry : raw.split(",")) {
@@ -199,53 +180,5 @@ public class VerificationConfig {
             }
         }
         return result;
-    }
-
-    public String getEndpoint() {
-        return endpoint;
-    }
-
-    public Method getMethod() {
-        return method;
-    }
-
-    public String getApiKey() {
-        return apiKey;
-    }
-
-    public String getApiKeyHeader() {
-        return apiKeyHeader;
-    }
-
-    public String getNumberField() {
-        return numberField;
-    }
-
-    public String getIdentifierField() {
-        return identifierField;
-    }
-
-    public String getIdentifierSource() {
-        return identifierSource;
-    }
-
-    public Map<String, String> getExtraFields() {
-        return extraFields;
-    }
-
-    public String getResponseField() {
-        return responseField;
-    }
-
-    public int getMaxAttempts() {
-        return maxAttempts;
-    }
-
-    public boolean isEnforceUnique() {
-        return enforceUnique;
-    }
-
-    public String getStoreAttribute() {
-        return storeAttribute;
     }
 }

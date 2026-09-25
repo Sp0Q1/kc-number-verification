@@ -9,7 +9,8 @@ because required actions can be flagged as *default* — Keycloak then attaches 
 automatically to every newly created user, whether created via self-registration,
 the admin console, the Admin REST API, or identity-brokered first login.
 
-Requires **Keycloak 25 or newer** (it uses the configurable-required-action API).
+Requires **Keycloak 26 or newer** (configurable required actions plus the `keycloak.v2`
+login theme macros the form is built on).
 
 ## Installation vs. administration
 
@@ -94,9 +95,11 @@ environment-variable deployment keeps working unchanged after upgrading.
 | Number field name | `number` | Field the submitted number is sent under |
 | Additional fields | – | Extra fields to include |
 | Response field | auto-detect | Field or JSON pointer holding the boolean |
-| Max attempts | `5` | Failed tries before the login aborts; `0` = unlimited |
+| Max attempts per login | `5` | Failed tries before the current login aborts; `0` = unlimited |
+| Max number length | `64` | Longest input accepted from the form |
 | Store number as attribute | – | Save the verified number under this attribute |
 | Enforce local uniqueness | `false` | Reject a number already bound to another account |
+| Apply to existing users | `true` | Also ask accounts that predate the action, at their next login |
 
 Values are validated on save: a malformed URL, an unknown identifier source, or
 uniqueness enforcement without a storage attribute are all rejected with an inline
@@ -117,12 +120,22 @@ NUMBER_VERIFICATION_NUMBER_FIELD=code
 NUMBER_VERIFICATION_EXTRA_FIELDS=email
 NUMBER_VERIFICATION_RESPONSE_FIELD=/data/verified
 NUMBER_VERIFICATION_MAX_ATTEMPTS=5
+NUMBER_VERIFICATION_MAX_LENGTH=64
 NUMBER_VERIFICATION_STORE_ATTRIBUTE=verifiedNumber
 NUMBER_VERIFICATION_ENFORCE_UNIQUE=true
+NUMBER_VERIFICATION_APPLY_TO_EXISTING_USERS=true
 ```
+
+Server-wide values are checked at startup: an unknown identifier source, a malformed
+URL or a non-numeric limit stops Keycloak from starting, with the variable named in
+the log, rather than surfacing as an error page on the first login.
 
 Secrets are better placed here than in the console: realm config is readable by any
 admin with realm-management rights and is included in realm exports.
+
+The API key is sent verbatim in the configured header. With the default
+`Authorization` header that means the value itself must carry the scheme, for
+example `Bearer eyJ...`.
 
 ### Identifying the account
 
@@ -168,9 +181,10 @@ curl -X PUT "$KC/admin/realms/$REALM/authentication/required-actions/verify-numb
        "maxAttempts":"5"}}'
 ```
 
-Existing users are covered too: `evaluateTriggers` re-adds the action on any login
-where the user lacks the `numberVerified` attribute. If you only want it for *new*
-accounts, delete the `evaluateTriggers` body and rely on the default-action flag alone.
+Existing users are covered too: with **Apply to existing users** on (the default), any
+login by an account without the `numberVerified` attribute re-adds the action. Turn it
+off to rely on the default-action flag alone, so only accounts created afterwards are
+asked.
 
 ## Backend API contract
 
@@ -248,12 +262,23 @@ Maven Enforcer runs during every build and fails fast on an unsupported JDK/Mave
 version or duplicate dependency declarations. Adjust the rules in `pom.xml` under the
 `maven-enforcer-plugin` block.
 
-
+## How it works
 
 - On success the user gets the attribute `numberVerified=true` and the action is
   removed (`isOneTimeAction()` returns `true`), so it never runs again.
 - Failed attempts are counted on the authentication session; exceeding
-  `MAX_ATTEMPTS` calls `context.failure()`, ending that login attempt.
+  `MAX_ATTEMPTS` calls `context.failure()`, ending that login attempt. Starting a new
+  login resets that counter, so on its own it is only a per-login brake.
+- Every rejected number is also reported to Keycloak's brute-force detector. If the
+  realm has **Brute force detection** enabled (Realm settings → Security defenses),
+  the realm's own lockout policy then applies across logins, exactly as for a wrong
+  password or OTP; a locked user sees a "too many attempts" message on this form.
+  Enable it, or rate-limit at the backend, before exposing this to untrusted users.
+- Input is capped at `MAX_LENGTH` characters both in the form and server-side before
+  anything is sent to the backend or stored.
+- `numberVerified` is an *unmanaged* user attribute. It survives admin edits, but the
+  admin console only shows it when **Unmanaged attributes** is enabled in the realm's
+  user profile settings. Enable that if admins need to inspect or reset it.
 - Custom events are emitted as `CUSTOM_REQUIRED_ACTION` with error codes
   `number_verification_rejected`, `number_verification_unavailable` and
   `number_verification_already_used`.
@@ -262,9 +287,12 @@ version or duplicate dependency declarations. Adjust the rules in `pom.xml` unde
 - The identifier is resolved fresh on every attempt, so it always matches the account
   currently authenticating — there is no way to verify a number against one account and
   have it apply to another.
-- The form template lives in `theme-resources/templates` and inherits whatever login
-  theme the realm uses, so it picks up your branding automatically. Override it by
-  placing `number-verification.ftl` in your own theme's `login/` folder.
+- The form template lives in `theme-resources/templates` and is built from the
+  `keycloak.v2` login theme's macros, so it looks like the stock pages and picks up
+  your branding automatically. A custom login theme must extend `keycloak.v2`.
+  Override the form by placing `number-verification.ftl` in your theme's `login/`
+  folder. Only an English message bundle ships; other locales fall back to it, so add
+  `messages_<locale>.properties` to your theme for translations.
 
 ## Testing locally
 
