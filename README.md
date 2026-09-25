@@ -150,6 +150,10 @@ spec, or `jsonFieldName=source` when the backend wants a different name:
 username,email,tenant=attr:tenantId
 ```
 
+To send *only* the number and the identifier, clear the field in the console or set
+`NUMBER_VERIFICATION_EXTRA_FIELDS=` to an empty value. Leaving the variable unset keeps
+the default `username,email,realm`.
+
 If the resolved identifier is empty for a user, verification is refused rather than
 sending an anonymous request.
 

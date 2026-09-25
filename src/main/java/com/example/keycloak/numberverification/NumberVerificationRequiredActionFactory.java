@@ -50,8 +50,11 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                         VerificationConfig.IDENTIFIER_FIELD,
                         "IDENTIFIER_FIELD",
                         UserFieldResolver.defaultFieldName(identifierSource));
-        String extraRaw =
-                get(scope, VerificationConfig.EXTRA_FIELDS, "EXTRA_FIELDS", "username,email,realm");
+        // Present-but-empty means "send nothing extra"; absent means the default list.
+        String extraRaw = getRaw(scope, VerificationConfig.EXTRA_FIELDS, "EXTRA_FIELDS");
+        if (extraRaw == null) {
+            extraRaw = "username,email,realm";
+        }
         String responseField =
                 get(scope, VerificationConfig.RESPONSE_FIELD, "RESPONSE_FIELD", null);
 
@@ -129,11 +132,14 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
     }
 
     private static String get(Config.Scope scope, String key, String envSuffix, String fallback) {
-        String value = scope.get(key);
-        if (value == null || value.isBlank()) {
-            value = System.getenv(ENV_PREFIX + envSuffix);
-        }
+        String value = getRaw(scope, key, envSuffix);
         return (value == null || value.isBlank()) ? fallback : value.trim();
+    }
+
+    /** SPI option first, then the environment variable; {@code null} only if neither is set. */
+    private static String getRaw(Config.Scope scope, String key, String envSuffix) {
+        String value = scope.get(key);
+        return value != null ? value : System.getenv(ENV_PREFIX + envSuffix);
     }
 
     private static boolean getBoolean(
