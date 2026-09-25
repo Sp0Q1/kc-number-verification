@@ -4,6 +4,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionFactory;
@@ -26,6 +27,10 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
     /** Startup defaults; each realm can override any of these in the admin console. */
     private VerificationConfig defaults;
 
+    /**
+     * Reads the server-wide defaults. Anything malformed fails startup with a message naming the
+     * variable, rather than surfacing as an error page on the first login.
+     */
     @Override
     public void init(Config.Scope scope) {
         String endpoint = get(scope, VerificationConfig.ENDPOINT, "ENDPOINT", null);
@@ -36,7 +41,9 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
 
         String numberField = get(scope, VerificationConfig.NUMBER_FIELD, "NUMBER_FIELD", "number");
         String identifierSource =
-                get(scope, VerificationConfig.IDENTIFIER_SOURCE, "IDENTIFIER_SOURCE", "id");
+                requireSource(
+                        get(scope, VerificationConfig.IDENTIFIER_SOURCE, "IDENTIFIER_SOURCE", "id"),
+                        "IDENTIFIER_SOURCE");
         String identifierField =
                 get(
                         scope,
@@ -51,16 +58,46 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         String storeAttribute =
                 get(scope, VerificationConfig.STORE_ATTRIBUTE, "STORE_ATTRIBUTE", null);
         boolean enforceUnique =
-                Boolean.parseBoolean(
-                        get(scope, VerificationConfig.ENFORCE_UNIQUE, "ENFORCE_UNIQUE", "false"));
+                getBoolean(scope, VerificationConfig.ENFORCE_UNIQUE, "ENFORCE_UNIQUE", false);
+        boolean applyToExistingUsers =
+                getBoolean(
+                        scope,
+                        VerificationConfig.APPLY_TO_EXISTING_USERS,
+                        "APPLY_TO_EXISTING_USERS",
+                        true);
         int maxAttempts =
-                VerificationConfig.parseInt(
-                        get(scope, VerificationConfig.MAX_ATTEMPTS, "MAX_ATTEMPTS", "5"), 5);
+                getInt(
+                        scope,
+                        VerificationConfig.MAX_ATTEMPTS,
+                        "MAX_ATTEMPTS",
+                        VerificationConfig.DEFAULT_MAX_ATTEMPTS,
+                        0);
+        int maxLength =
+                getInt(
+                        scope,
+                        VerificationConfig.MAX_LENGTH,
+                        "MAX_LENGTH",
+                        VerificationConfig.DEFAULT_MAX_LENGTH,
+                        1);
 
-        VerificationConfig.Method method =
-                VerificationConfig.parseMethod(methodRaw, VerificationConfig.Method.POST);
+        if (endpoint != null) {
+            requireUrl(
+                    endpoint,
+                    () ->
+                            new IllegalStateException(
+                                    ENV_PREFIX + "ENDPOINT is not a valid http(s) URL"));
+        }
+        VerificationConfig.Method method = VerificationConfig.parseMethod(methodRaw, null);
+        if (method == null) {
+            throw new IllegalStateException(ENV_PREFIX + "METHOD must be POST or GET");
+        }
+        if (enforceUnique && (storeAttribute == null || storeAttribute.isBlank())) {
+            throw new IllegalStateException(
+                    ENV_PREFIX + "ENFORCE_UNIQUE=true requires " + ENV_PREFIX + "STORE_ATTRIBUTE");
+        }
 
         Map<String, String> extraFields = VerificationConfig.parseFieldList(extraRaw);
+        extraFields.values().forEach(spec -> requireSource(spec, "EXTRA_FIELDS"));
         extraFields.remove(identifierField);
 
         this.defaults =
@@ -75,26 +112,80 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                         extraFields,
                         responseField,
                         maxAttempts,
+                        maxLength,
                         enforceUnique,
-                        storeAttribute);
+                        storeAttribute,
+                        applyToExistingUsers);
 
-        if (endpoint == null || endpoint.isBlank()) {
+        if (defaults.hasEndpoint()) {
+            LOG.infof("Default number verification endpoint: %s %s", method, endpoint);
+        } else {
             LOG.infof(
                     "No default verification endpoint set via %sENDPOINT; each realm must "
                             + "configure one in the admin console under Authentication -> "
                             + "Required actions -> %s.",
                     ENV_PREFIX, NumberVerificationRequiredAction.PROVIDER_ID);
-        } else {
-            LOG.infof("Default number verification endpoint: %s %s", method, endpoint);
         }
     }
 
-    private String get(Config.Scope scope, String key, String envSuffix, String fallback) {
+    private static String get(Config.Scope scope, String key, String envSuffix, String fallback) {
         String value = scope.get(key);
         if (value == null || value.isBlank()) {
             value = System.getenv(ENV_PREFIX + envSuffix);
         }
-        return (value == null || value.isBlank()) ? fallback : value;
+        return (value == null || value.isBlank()) ? fallback : value.trim();
+    }
+
+    private static boolean getBoolean(
+            Config.Scope scope, String key, String envSuffix, boolean fallback) {
+        String raw = get(scope, key, envSuffix, null);
+        if (raw == null) {
+            return fallback;
+        }
+        if (raw.equalsIgnoreCase("true") || raw.equalsIgnoreCase("false")) {
+            return Boolean.parseBoolean(raw);
+        }
+        throw new IllegalStateException(ENV_PREFIX + envSuffix + " must be true or false");
+    }
+
+    private static int getInt(
+            Config.Scope scope, String key, String envSuffix, int fallback, int min) {
+        String raw = get(scope, key, envSuffix, null);
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            int value = Integer.parseInt(raw);
+            if (value < min) {
+                throw new IllegalStateException(
+                        ENV_PREFIX + envSuffix + " must be at least " + min);
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException(ENV_PREFIX + envSuffix + " must be a whole number", e);
+        }
+    }
+
+    private static String requireSource(String spec, String envSuffix) {
+        try {
+            return UserFieldResolver.validate(spec);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(ENV_PREFIX + envSuffix + ": " + e.getMessage(), e);
+        }
+    }
+
+    private static void requireUrl(String endpoint, Supplier<? extends RuntimeException> error) {
+        try {
+            URI uri = new URI(endpoint.trim());
+            boolean http =
+                    "http".equalsIgnoreCase(uri.getScheme())
+                            || "https".equalsIgnoreCase(uri.getScheme());
+            if (!http || uri.getHost() == null) {
+                throw error.get();
+            }
+        } catch (URISyntaxException e) {
+            throw error.get();
+        }
     }
 
     // ---------------------------------------------------------------- admin console
@@ -128,8 +219,9 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .name(VerificationConfig.API_KEY)
                 .label("API key")
                 .helpText(
-                        "Optional credential sent with each request. Stored in the realm "
-                                + "configuration, so prefer the server-wide default for secrets.")
+                        "Optional credential sent verbatim in the header below (include any "
+                                + "'Bearer ' prefix yourself). Stored in the realm configuration, "
+                                + "so prefer the server-wide default for secrets.")
                 .type(ProviderConfigProperty.PASSWORD)
                 .secret(true)
                 .add()
@@ -185,10 +277,20 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .add()
                 .property()
                 .name(VerificationConfig.MAX_ATTEMPTS)
-                .label("Max attempts")
-                .helpText("Failed attempts before the login is aborted. 0 means unlimited.")
+                .label("Max attempts per login")
+                .helpText(
+                        "Failed attempts before the current login is aborted. 0 means unlimited. "
+                                + "Every failure is also reported to the realm's brute-force "
+                                + "detection, which enforces lockout across logins when enabled.")
                 .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("5")
+                .defaultValue(String.valueOf(VerificationConfig.DEFAULT_MAX_ATTEMPTS))
+                .add()
+                .property()
+                .name(VerificationConfig.MAX_LENGTH)
+                .label("Max number length")
+                .helpText("Longest input accepted from the form, in characters.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(String.valueOf(VerificationConfig.DEFAULT_MAX_LENGTH))
                 .add()
                 .property()
                 .name(VerificationConfig.STORE_ATTRIBUTE)
@@ -208,6 +310,16 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("false")
                 .add()
+                .property()
+                .name(VerificationConfig.APPLY_TO_EXISTING_USERS)
+                .label("Apply to existing users")
+                .helpText(
+                        "On: every account that has not been verified is asked at its next login. "
+                                + "Off: only accounts created after this action was made a default "
+                                + "action are asked.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("true")
+                .add()
                 .build();
     }
 
@@ -219,20 +331,12 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
 
         String endpoint = model.getConfigValue(VerificationConfig.ENDPOINT);
         if (endpoint != null && !endpoint.isBlank()) {
-            try {
-                URI uri = new URI(endpoint.trim());
-                if (uri.getScheme() == null || uri.getHost() == null) {
-                    throw new URISyntaxException(endpoint, "missing scheme or host");
-                }
-                if (!"http".equalsIgnoreCase(uri.getScheme())
-                        && !"https".equalsIgnoreCase(uri.getScheme())) {
-                    throw new ModelValidationException(
-                            "Verification endpoint must use http or https");
-                }
-            } catch (URISyntaxException e) {
-                throw new ModelValidationException("Verification endpoint is not a valid URL");
-            }
-        } else if (defaults.getEndpoint() == null || defaults.getEndpoint().isBlank()) {
+            requireUrl(
+                    endpoint,
+                    () ->
+                            new ModelValidationException(
+                                    "Verification endpoint must be a valid http or https URL"));
+        } else if (!defaults.hasEndpoint()) {
             throw new ModelValidationException(
                     "A verification endpoint is required: no "
                             + "server-wide default is configured for this server");
@@ -255,53 +359,41 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                     .forEach(spec -> validateSource(spec, "Additional fields"));
         }
 
-        String maxAttempts = model.getConfigValue(VerificationConfig.MAX_ATTEMPTS);
-        if (maxAttempts != null && !maxAttempts.isBlank()) {
-            try {
-                if (Integer.parseInt(maxAttempts.trim()) < 0) {
-                    throw new ModelValidationException("Max attempts cannot be negative");
-                }
-            } catch (NumberFormatException e) {
-                throw new ModelValidationException("Max attempts must be a whole number");
-            }
-        }
+        validateInt(model.getConfigValue(VerificationConfig.MAX_ATTEMPTS), "Max attempts", 0);
+        validateInt(model.getConfigValue(VerificationConfig.MAX_LENGTH), "Max number length", 1);
 
         boolean enforceUnique =
                 Boolean.parseBoolean(model.getConfigValue(VerificationConfig.ENFORCE_UNIQUE));
         String storeAttribute = model.getConfigValue(VerificationConfig.STORE_ATTRIBUTE);
         if (enforceUnique
                 && (storeAttribute == null || storeAttribute.isBlank())
-                && (defaults.getStoreAttribute() == null
-                        || defaults.getStoreAttribute().isBlank())) {
+                && !defaults.storesNumber()) {
             throw new ModelValidationException(
                     "Enforcing local uniqueness requires 'Store number as attribute' to be set");
         }
     }
 
-    private void validateSource(String spec, String label) {
+    private static void validateSource(String spec, String label) {
         if (spec == null || spec.isBlank()) {
             return;
         }
-        String s = spec.trim();
-        if (s.regionMatches(
-                true,
-                0,
-                UserFieldResolver.ATTR_PREFIX,
-                0,
-                UserFieldResolver.ATTR_PREFIX.length())) {
-            if (s.substring(UserFieldResolver.ATTR_PREFIX.length()).isBlank()) {
-                throw new ModelValidationException(label + ": 'attr:' needs an attribute name");
-            }
+        try {
+            UserFieldResolver.validate(spec);
+        } catch (IllegalArgumentException e) {
+            throw new ModelValidationException(label + ": " + e.getMessage());
+        }
+    }
+
+    private static void validateInt(String raw, String label, int min) {
+        if (raw == null || raw.isBlank()) {
             return;
         }
-        if (!List.of("id", "userId", "username", "email", "firstName", "lastName", "realm")
-                .contains(s)) {
-            throw new ModelValidationException(
-                    label
-                            + ": unknown source '"
-                            + spec
-                            + "'. Use id, username, email, firstName, lastName, realm or"
-                            + " attr:<name>.");
+        try {
+            if (Integer.parseInt(raw.trim()) < min) {
+                throw new ModelValidationException(label + " must be at least " + min);
+            }
+        } catch (NumberFormatException e) {
+            throw new ModelValidationException(label + " must be a whole number");
         }
     }
 

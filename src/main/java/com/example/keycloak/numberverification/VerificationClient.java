@@ -27,10 +27,18 @@ import org.keycloak.util.JsonSerialization;
  * <p>The payload is assembled from configuration, so the account identifier sent alongside the
  * number can be the Keycloak user id, the username, or any custom user attribute, under whatever
  * JSON field name the backend expects.
+ *
+ * <p>Requests go through Keycloak's shared {@link HttpClientProvider}, so connection pooling and
+ * the server-wide socket timeout (5 s by default) apply without any extra configuration.
  */
 public class VerificationClient {
 
     private static final Logger LOG = Logger.getLogger(VerificationClient.class);
+
+    /** Longest slice of a backend response that may end up in a log line or event. */
+    private static final int MAX_QUOTED_BODY = 200;
+
+    private static final String[] AUTO_DETECT_FIELDS = {"verified", "valid", "result", "success"};
 
     private final VerificationConfig config;
 
@@ -44,22 +52,22 @@ public class VerificationClient {
      */
     public boolean verify(
             KeycloakSession session, RealmModel realm, UserModel user, String number) {
-        if (config.getEndpoint() == null || config.getEndpoint().isBlank()) {
+        if (!config.hasEndpoint()) {
             throw new VerificationException("No verification endpoint configured");
         }
 
         Map<String, String> payload = buildPayload(realm, user, number);
         LOG.debugf(
                 "Verifying number for %s=%s",
-                config.getIdentifierField(), payload.get(config.getIdentifierField()));
+                config.identifierField(), payload.get(config.identifierField()));
 
         HttpRequestBase request =
-                config.getMethod() == VerificationConfig.Method.GET
+                config.method() == VerificationConfig.Method.GET
                         ? buildGet(payload)
                         : buildPost(payload);
 
-        if (config.getApiKey() != null && !config.getApiKey().isBlank()) {
-            request.setHeader(config.getApiKeyHeader(), config.getApiKey());
+        if (config.hasApiKey()) {
+            request.setHeader(config.apiKeyHeader(), config.apiKey());
         }
         request.setHeader("Accept", "application/json");
 
@@ -91,21 +99,21 @@ public class VerificationClient {
     /** Assembles the number, the account identifier and any extra configured fields. */
     Map<String, String> buildPayload(RealmModel realm, UserModel user, String number) {
         Map<String, String> payload = new LinkedHashMap<>();
-        payload.put(config.getNumberField(), number);
+        payload.put(config.numberField(), number);
 
-        String identifier = UserFieldResolver.resolve(user, realm, config.getIdentifierSource());
+        String identifier = resolve(user, realm, config.identifierSource());
         if (identifier == null || identifier.isBlank()) {
             throw new VerificationException(
                     "Account identifier '"
-                            + config.getIdentifierSource()
+                            + config.identifierSource()
                             + "' is empty for user "
                             + user.getId()
                             + "; the backend cannot tell which account this number is for");
         }
-        payload.put(config.getIdentifierField(), identifier);
+        payload.put(config.identifierField(), identifier);
 
-        for (Map.Entry<String, String> field : config.getExtraFields().entrySet()) {
-            String value = UserFieldResolver.resolve(user, realm, field.getValue());
+        for (Map.Entry<String, String> field : config.extraFields().entrySet()) {
+            String value = resolve(user, realm, field.getValue());
             if (value != null) {
                 payload.put(field.getKey(), value);
             }
@@ -113,8 +121,20 @@ public class VerificationClient {
         return payload;
     }
 
+    /**
+     * Sources are validated at startup and on console save, so an unknown spec here means the
+     * stored config was edited by other means. Surface it as an outage rather than a stack trace.
+     */
+    private static String resolve(UserModel user, RealmModel realm, String spec) {
+        try {
+            return UserFieldResolver.resolve(user, realm, spec);
+        } catch (IllegalArgumentException e) {
+            throw new VerificationException("Invalid field source in configuration: " + spec, e);
+        }
+    }
+
     private HttpRequestBase buildPost(Map<String, String> payload) {
-        HttpPost post = new HttpPost(config.getEndpoint());
+        HttpPost post = new HttpPost(config.endpoint());
         post.setHeader("Content-Type", "application/json");
         try {
             post.setEntity(
@@ -128,7 +148,7 @@ public class VerificationClient {
 
     private HttpRequestBase buildGet(Map<String, String> payload) {
         try {
-            URIBuilder builder = new URIBuilder(config.getEndpoint());
+            URIBuilder builder = new URIBuilder(config.endpoint());
             payload.forEach(builder::addParameter);
             return new HttpGet(builder.build());
         } catch (URISyntaxException e) {
@@ -146,32 +166,41 @@ public class VerificationClient {
             if (node.isBoolean()) {
                 return node.booleanValue();
             }
-            if (config.getResponseField() != null && !config.getResponseField().isBlank()) {
-                JsonNode explicit = node.at(toPointer(config.getResponseField()));
+            String responseField = config.responseField();
+            if (responseField != null && !responseField.isBlank()) {
+                JsonNode explicit = node.at(toPointer(responseField));
                 if (explicit.isBoolean()) {
                     return explicit.booleanValue();
                 }
                 throw new VerificationException(
-                        "Response has no boolean at '" + config.getResponseField() + "'");
+                        "Response has no boolean at '" + responseField + "'");
             }
-            for (String field : new String[] {"verified", "valid", "result", "success"}) {
+            for (String field : AUTO_DETECT_FIELDS) {
                 JsonNode candidate = node.get(field);
                 if (candidate != null && candidate.isBoolean()) {
                     return candidate.booleanValue();
                 }
             }
         } catch (IOException e) {
-            LOG.debugf(e, "Verification response was not JSON: %s", trimmed);
+            LOG.debugf(e, "Verification response was not JSON: %s", abbreviate(trimmed));
         }
         if ("true".equalsIgnoreCase(trimmed) || "false".equalsIgnoreCase(trimmed)) {
             return Boolean.parseBoolean(trimmed);
         }
-        throw new VerificationException("Unrecognised verification response: " + trimmed);
+        throw new VerificationException(
+                "Unrecognised verification response: " + abbreviate(trimmed));
     }
 
     /** Accepts either "verified" or a JSON pointer such as "/data/verified". */
-    private String toPointer(String field) {
+    private static String toPointer(String field) {
         return field.startsWith("/") ? field : "/" + field;
+    }
+
+    /** Keeps foreign response bodies out of the logs beyond what is needed to debug them. */
+    private static String abbreviate(String body) {
+        return body.length() <= MAX_QUOTED_BODY
+                ? body
+                : body.substring(0, MAX_QUOTED_BODY) + "... [" + body.length() + " chars]";
     }
 
     public static class VerificationException extends RuntimeException {
