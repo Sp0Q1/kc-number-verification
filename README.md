@@ -9,8 +9,7 @@ because required actions can be flagged as *default* — Keycloak then attaches 
 automatically to every newly created user, whether created via self-registration,
 the admin console, the Admin REST API, or identity-brokered first login.
 
-Requires **Keycloak 26 or newer** (configurable required actions plus the `keycloak.v2`
-login theme macros the form is built on).
+Requires **Keycloak 25 or newer** (it uses the configurable-required-action API).
 
 ## Installation vs. administration
 
@@ -287,12 +286,13 @@ version or duplicate dependency declarations. Adjust the rules in `pom.xml` unde
 - The identifier is resolved fresh on every attempt, so it always matches the account
   currently authenticating — there is no way to verify a number against one account and
   have it apply to another.
-- The form template lives in `theme-resources/templates` and is built from the
-  `keycloak.v2` login theme's macros, so it looks like the stock pages and picks up
-  your branding automatically. A custom login theme must extend `keycloak.v2`.
-  Override the form by placing `number-verification.ftl` in your theme's `login/`
-  folder. Only an English message bundle ships; other locales fall back to it, so add
-  `messages_<locale>.properties` to your theme for translations.
+- The form template lives in `theme-resources/templates` and inherits whatever login
+  theme the realm uses, so it picks up your branding automatically. It is written
+  against the theme *properties* only (no theme-specific macros) and renders correctly
+  under `base`, the legacy `keycloak` theme, `keycloak.v2`, and custom themes extending
+  any of them. Override it by placing `number-verification.ftl` in your own theme's
+  `login/` folder. Only an English message bundle ships; other locales fall back to it,
+  so add `messages_<locale>.properties` to your theme for translations.
 
 ## Testing locally
 
