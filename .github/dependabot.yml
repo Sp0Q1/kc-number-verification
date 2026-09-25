@@ -7,6 +7,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Wait a week before proposing a freshly published version, so a compromised
+    # or broken release is usually caught upstream before it reaches this repo.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels:
       - dependencies
@@ -34,6 +38,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Wait a week before proposing a freshly published version, so a compromised
+    # or broken release is usually caught upstream before it reaches this repo.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels:
       - dependencies
