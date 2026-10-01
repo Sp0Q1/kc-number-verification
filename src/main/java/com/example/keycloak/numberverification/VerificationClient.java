@@ -9,9 +9,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Pattern;
 import org.apache.http.HttpEntity;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.Configurable;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpRequestBase;
@@ -45,8 +46,8 @@ public class VerificationClient {
     /** Longest slice of a backend response that may end up in a log line or event. */
     private static final int MAX_QUOTED_BODY = 200;
 
-    /** Line breaks and other control characters, which could forge log lines if quoted raw. */
-    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cntrl}\\u2028\\u2029]+");
+    /** Upper bound on connecting when the server-wide client sets none (its default). */
+    private static final int FALLBACK_CONNECT_TIMEOUT_MS = 10_000;
 
     private static final String[] AUTO_DETECT_FIELDS = {"verified", "valid", "result", "success"};
 
@@ -67,9 +68,7 @@ public class VerificationClient {
         }
 
         Map<String, String> payload = buildPayload(realm, user, number);
-        LOG.debugf(
-                "Verifying number for %s=%s",
-                config.identifierField(), payload.get(config.identifierField()));
+        LOG.debugf("Verifying number for user %s via %s", user.getId(), config.identifierSource());
 
         HttpRequestBase request =
                 config.method() == VerificationConfig.Method.GET
@@ -83,6 +82,7 @@ public class VerificationClient {
 
         HttpClientProvider provider = session.getProvider(HttpClientProvider.class);
         CloseableHttpClient http = provider.getHttpClient();
+        request.setConfig(requestConfig(http));
         try (CloseableHttpResponse response = http.execute(request)) {
             int status = response.getStatusLine().getStatusCode();
             String body = readBody(response.getEntity(), provider.getMaxConsumedResponseSize());
@@ -103,6 +103,24 @@ public class VerificationClient {
             throw new VerificationException(
                     "Verification service call failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Per-request settings layered on the shared client's own: redirects are never followed (the
+     * API key must not travel to a Location of the backend's choosing) and connecting is bounded
+     * even when the server-wide client leaves it unbounded. Everything else, notably the socket
+     * timeout the admin configured, is kept.
+     */
+    private static RequestConfig requestConfig(CloseableHttpClient http) {
+        RequestConfig base =
+                http instanceof Configurable configurable && configurable.getConfig() != null
+                        ? configurable.getConfig()
+                        : RequestConfig.DEFAULT;
+        RequestConfig.Builder builder = RequestConfig.copy(base).setRedirectsEnabled(false);
+        if (base.getConnectTimeout() <= 0) {
+            builder.setConnectTimeout(FALLBACK_CONNECT_TIMEOUT_MS);
+        }
+        return builder.build();
     }
 
     /** Reads at most {@code maxBytes}; a larger body is an error, not a truncated parse. */
@@ -218,16 +236,22 @@ public class VerificationClient {
     }
 
     /**
-     * Makes a foreign response body safe to quote in a log line or exception message: line breaks
-     * and other control characters are collapsed to a space so the body cannot forge log entries,
-     * and only a short prefix is kept.
+     * Makes a foreign response body safe to quote in a log line or exception message. Allowlist:
+     * only printable ASCII survives, every other character (line breaks, escape sequences, bidi
+     * overrides, anything non-ASCII) becomes {@code ?}, so the body can neither forge log entries
+     * nor confuse a terminal. Only a short prefix is kept, and only that prefix is scanned.
      */
-    private static String quotable(String body) {
-        String flat =
-                CONTROL_CHARS.matcher(body.replace('\n', ' ').replace('\r', ' ')).replaceAll(" ");
-        return flat.length() <= MAX_QUOTED_BODY
-                ? flat
-                : flat.substring(0, MAX_QUOTED_BODY) + "... [" + body.length() + " chars]";
+    static String quotable(String body) {
+        int keep = Math.min(body.length(), MAX_QUOTED_BODY);
+        StringBuilder out = new StringBuilder(keep + 24);
+        for (int i = 0; i < keep; i++) {
+            char c = body.charAt(i);
+            out.append(c >= 0x20 && c <= 0x7E ? c : '?');
+        }
+        if (body.length() > keep) {
+            out.append("... [").append(body.length()).append(" chars]");
+        }
+        return out.toString();
     }
 
     public static class VerificationException extends RuntimeException {
