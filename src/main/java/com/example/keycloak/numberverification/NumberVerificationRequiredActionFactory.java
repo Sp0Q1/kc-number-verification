@@ -1,13 +1,7 @@
 package com.example.keycloak.numberverification;
 
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionFactory;
@@ -31,199 +25,39 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
     private VerificationConfig defaults;
 
     /**
-     * Reads the server-wide defaults. Anything malformed fails startup with a message naming the
-     * variable, rather than surfacing as an error page on the first login.
+     * Reads the server-wide defaults from SPI options or environment variables. Anything malformed
+     * fails startup with a message naming the variable, rather than surfacing on the first login.
      */
     @Override
     public void init(Config.Scope scope) {
-        String endpoint = get(scope, VerificationConfig.ENDPOINT, "ENDPOINT", null);
-        String methodRaw = get(scope, VerificationConfig.METHOD, "METHOD", "POST");
-        String apiKey = get(scope, VerificationConfig.API_KEY, "API_KEY", null);
-        String apiKeyHeader =
-                get(scope, VerificationConfig.API_KEY_HEADER, "API_KEY_HEADER", "Authorization");
-
-        String numberField = get(scope, VerificationConfig.NUMBER_FIELD, "NUMBER_FIELD", "number");
-        String identifierSource =
-                requireSource(
-                        get(scope, VerificationConfig.IDENTIFIER_SOURCE, "IDENTIFIER_SOURCE", "id"),
-                        "IDENTIFIER_SOURCE");
-        String identifierField =
-                get(
-                        scope,
-                        VerificationConfig.IDENTIFIER_FIELD,
-                        "IDENTIFIER_FIELD",
-                        UserFieldResolver.defaultFieldName(identifierSource));
-        // Privacy by default: only the identifier and the number leave the server unless
-        // an admin lists more.
-        String extraRaw = get(scope, VerificationConfig.EXTRA_FIELDS, "EXTRA_FIELDS", "");
-        String responseField =
-                get(scope, VerificationConfig.RESPONSE_FIELD, "RESPONSE_FIELD", null);
-
-        String storeAttribute =
-                get(scope, VerificationConfig.STORE_ATTRIBUTE, "STORE_ATTRIBUTE", null);
-        boolean enforceUnique =
-                getBoolean(scope, VerificationConfig.ENFORCE_UNIQUE, "ENFORCE_UNIQUE", false);
-        boolean applyToExistingUsers =
-                getBoolean(
-                        scope,
-                        VerificationConfig.APPLY_TO_EXISTING_USERS,
-                        "APPLY_TO_EXISTING_USERS",
-                        true);
-        boolean allowInsecureHttp =
-                getBoolean(
-                        scope,
-                        VerificationConfig.ALLOW_INSECURE_HTTP,
-                        "ALLOW_INSECURE_HTTP",
-                        false);
-        Pattern pattern = requirePattern(get(scope, VerificationConfig.PATTERN, "PATTERN", null));
-        int maxAttempts =
-                getInt(
-                        scope,
-                        VerificationConfig.MAX_ATTEMPTS,
-                        "MAX_ATTEMPTS",
-                        VerificationConfig.DEFAULT_MAX_ATTEMPTS,
-                        0);
-        int maxLength =
-                getInt(
-                        scope,
-                        VerificationConfig.MAX_LENGTH,
-                        "MAX_LENGTH",
-                        VerificationConfig.DEFAULT_MAX_LENGTH,
-                        1);
-
-        if (endpoint != null) {
-            requireUrl(
-                    endpoint,
-                    allowInsecureHttp,
-                    message -> new IllegalStateException(ENV_PREFIX + "ENDPOINT " + message));
+        try {
+            defaults =
+                    VerificationConfig.parse(
+                            key -> {
+                                String value = scope.get(key);
+                                return value != null ? value : System.getenv(envName(key));
+                            },
+                            VerificationConfig.BUILT_IN);
+        } catch (VerificationConfig.InvalidSettingException e) {
+            throw new IllegalStateException(envName(e.key()) + " " + e.getMessage(), e);
         }
-        VerificationConfig.Method method = VerificationConfig.parseMethod(methodRaw, null);
-        if (method == null) {
-            throw new IllegalStateException(ENV_PREFIX + "METHOD must be POST or GET");
-        }
-        if (enforceUnique && (storeAttribute == null || storeAttribute.isBlank())) {
-            throw new IllegalStateException(
-                    ENV_PREFIX + "ENFORCE_UNIQUE=true requires " + ENV_PREFIX + "STORE_ATTRIBUTE");
-        }
-
-        Map<String, String> extraFields = VerificationConfig.parseFieldList(extraRaw);
-        extraFields.values().forEach(spec -> requireSource(spec, "EXTRA_FIELDS"));
-        extraFields.remove(identifierField);
-
-        this.defaults =
-                new VerificationConfig(
-                        endpoint,
-                        method,
-                        apiKey,
-                        apiKeyHeader,
-                        numberField,
-                        identifierField,
-                        identifierSource,
-                        extraFields,
-                        responseField,
-                        maxAttempts,
-                        maxLength,
-                        pattern,
-                        enforceUnique,
-                        storeAttribute,
-                        applyToExistingUsers,
-                        allowInsecureHttp);
 
         if (defaults.hasEndpoint()) {
-            LOG.infof("Default number verification endpoint: %s %s", method, endpoint);
+            LOG.infof(
+                    "Default number verification endpoint: %s %s",
+                    defaults.method(), defaults.endpoint());
         } else {
             LOG.infof(
-                    "No default verification endpoint set via %sENDPOINT; each realm must "
-                            + "configure one in the admin console under Authentication -> "
-                            + "Required actions -> %s.",
-                    ENV_PREFIX, NumberVerificationRequiredAction.PROVIDER_ID);
+                    "No default verification endpoint set via %s; each realm must configure one in"
+                            + " the admin console under Authentication -> Required actions -> %s.",
+                    envName(VerificationConfig.ENDPOINT),
+                    NumberVerificationRequiredAction.PROVIDER_ID);
         }
     }
 
-    private static String get(Config.Scope scope, String key, String envSuffix, String fallback) {
-        String value = scope.get(key);
-        if (value == null) {
-            value = System.getenv(ENV_PREFIX + envSuffix);
-        }
-        return (value == null || value.isBlank()) ? fallback : value.trim();
-    }
-
-    private static boolean getBoolean(
-            Config.Scope scope, String key, String envSuffix, boolean fallback) {
-        String raw = get(scope, key, envSuffix, null);
-        if (raw == null) {
-            return fallback;
-        }
-        String lower = raw.toLowerCase(Locale.ROOT);
-        if ("true".equals(lower) || "false".equals(lower)) {
-            return "true".equals(lower);
-        }
-        throw new IllegalStateException(ENV_PREFIX + envSuffix + " must be true or false");
-    }
-
-    private static int getInt(
-            Config.Scope scope, String key, String envSuffix, int fallback, int min) {
-        String raw = get(scope, key, envSuffix, null);
-        if (raw == null) {
-            return fallback;
-        }
-        try {
-            int value = Integer.parseInt(raw);
-            if (value < min) {
-                throw new IllegalStateException(
-                        ENV_PREFIX + envSuffix + " must be at least " + min);
-            }
-            return value;
-        } catch (NumberFormatException e) {
-            throw new IllegalStateException(ENV_PREFIX + envSuffix + " must be a whole number", e);
-        }
-    }
-
-    private static String requireSource(String spec, String envSuffix) {
-        try {
-            return UserFieldResolver.validate(spec);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalStateException(ENV_PREFIX + envSuffix + ": " + e.getMessage(), e);
-        }
-    }
-
-    private static Pattern requirePattern(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return Pattern.compile(raw);
-        } catch (PatternSyntaxException e) {
-            throw new IllegalStateException(
-                    ENV_PREFIX + "PATTERN is not a valid regular expression: " + e.getDescription(),
-                    e);
-        }
-    }
-
-    /**
-     * Accepts an absolute https URL. Plain http is refused unless explicitly allowed, so a
-     * verification secret or personal data cannot be sent in clear by a typo.
-     */
-    private static void requireUrl(
-            String endpoint,
-            boolean allowInsecureHttp,
-            Function<String, ? extends RuntimeException> error) {
-        URI uri;
-        try {
-            uri = new URI(endpoint.trim());
-        } catch (URISyntaxException e) {
-            throw error.apply("is not a valid URL");
-        }
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        if (uri.getHost() == null || !(scheme.equals("https") || scheme.equals("http"))) {
-            throw error.apply("must be an absolute http(s) URL");
-        }
-        if (scheme.equals("http") && !allowInsecureHttp) {
-            throw error.apply(
-                    "uses plain http; use https or explicitly allow insecure http ("
-                            + VerificationConfig.ALLOW_INSECURE_HTTP
-                            + ")");
-        }
+    /** {@code apiKeyHeader} becomes {@code NUMBER_VERIFICATION_API_KEY_HEADER}. */
+    static String envName(String key) {
+        return ENV_PREFIX + key.replaceAll("([a-z])([A-Z])", "$1_$2").toUpperCase(Locale.ROOT);
     }
 
     // ---------------------------------------------------------------- admin console
@@ -378,93 +212,32 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .build();
     }
 
-    /** Runs when an admin saves the form, so bad values are rejected at edit time. */
+    /**
+     * Runs when an admin saves the form. The same rules as at startup; errors are phrased with the
+     * label the admin sees in the console.
+     */
     @Override
     public void validateConfig(
             KeycloakSession session, RealmModel realm, RequiredActionConfigModel model) {
         RequiredActionFactory.super.validateConfig(session, realm, model);
-
-        String insecureRaw = model.getConfigValue(VerificationConfig.ALLOW_INSECURE_HTTP);
-        boolean allowInsecureHttp =
-                insecureRaw == null || insecureRaw.isBlank()
-                        ? defaults.allowInsecureHttp()
-                        : Boolean.parseBoolean(insecureRaw.trim());
-
-        String endpoint = model.getConfigValue(VerificationConfig.ENDPOINT);
-        if (endpoint != null && !endpoint.isBlank()) {
-            requireUrl(
-                    endpoint,
-                    allowInsecureHttp,
-                    message -> new ModelValidationException("Verification endpoint " + message));
-        } else if (!defaults.hasEndpoint()) {
+        VerificationConfig effective;
+        try {
+            effective = VerificationConfig.parse(model::getConfigValue, defaults);
+        } catch (VerificationConfig.InvalidSettingException e) {
+            throw new ModelValidationException(label(e.key()) + " " + e.getMessage());
+        }
+        if (!effective.hasEndpoint()) {
             throw new ModelValidationException(
-                    "A verification endpoint is required: no "
-                            + "server-wide default is configured for this server");
-        }
-
-        String method = model.getConfigValue(VerificationConfig.METHOD);
-        if (method != null
-                && !method.isBlank()
-                && VerificationConfig.parseMethod(method, null) == null) {
-            throw new ModelValidationException("HTTP method must be POST or GET");
-        }
-
-        validateSource(
-                model.getConfigValue(VerificationConfig.IDENTIFIER_SOURCE),
-                "Account identifier source");
-        String extras = model.getConfigValue(VerificationConfig.EXTRA_FIELDS);
-        if (extras != null && !extras.isBlank()) {
-            VerificationConfig.parseFieldList(extras)
-                    .values()
-                    .forEach(spec -> validateSource(spec, "Additional fields"));
-        }
-
-        String pattern = model.getConfigValue(VerificationConfig.PATTERN);
-        if (pattern != null && !pattern.isBlank()) {
-            try {
-                Pattern.compile(pattern.trim());
-            } catch (PatternSyntaxException e) {
-                throw new ModelValidationException(
-                        "Number pattern is not a valid regular expression: " + e.getDescription());
-            }
-        }
-
-        validateInt(model.getConfigValue(VerificationConfig.MAX_ATTEMPTS), "Max attempts", 0);
-        validateInt(model.getConfigValue(VerificationConfig.MAX_LENGTH), "Max number length", 1);
-
-        boolean enforceUnique =
-                Boolean.parseBoolean(model.getConfigValue(VerificationConfig.ENFORCE_UNIQUE));
-        String storeAttribute = model.getConfigValue(VerificationConfig.STORE_ATTRIBUTE);
-        if (enforceUnique
-                && (storeAttribute == null || storeAttribute.isBlank())
-                && !defaults.storesNumber()) {
-            throw new ModelValidationException(
-                    "Enforcing local uniqueness requires 'Store number as attribute' to be set");
+                    "A verification endpoint is required: no server-wide default is configured");
         }
     }
 
-    private static void validateSource(String spec, String label) {
-        if (spec == null || spec.isBlank()) {
-            return;
-        }
-        try {
-            UserFieldResolver.validate(spec);
-        } catch (IllegalArgumentException e) {
-            throw new ModelValidationException(label + ": " + e.getMessage());
-        }
-    }
-
-    private static void validateInt(String raw, String label, int min) {
-        if (raw == null || raw.isBlank()) {
-            return;
-        }
-        try {
-            if (Integer.parseInt(raw.trim()) < min) {
-                throw new ModelValidationException(label + " must be at least " + min);
-            }
-        } catch (NumberFormatException e) {
-            throw new ModelValidationException(label + " must be a whole number");
-        }
+    private String label(String key) {
+        return getConfigMetadata().stream()
+                .filter(property -> key.equals(property.getName()))
+                .map(ProviderConfigProperty::getLabel)
+                .findFirst()
+                .orElse(key);
     }
 
     // ---------------------------------------------------------------- lifecycle

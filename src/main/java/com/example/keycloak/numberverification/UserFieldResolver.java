@@ -34,20 +34,20 @@ public final class UserFieldResolver {
      */
     public static String validate(String spec) {
         if (spec == null || spec.isBlank()) {
-            throw new IllegalArgumentException("source must not be blank");
+            throw new IllegalArgumentException("must not be blank");
         }
         String s = spec.trim();
         if (isAttribute(s)) {
             if (attributeName(s).isEmpty()) {
-                throw new IllegalArgumentException("'attr:' needs an attribute name");
+                throw new IllegalArgumentException("needs an attribute name after 'attr:'");
             }
             return s;
         }
         if (!BUILT_IN.contains(s)) {
             throw new IllegalArgumentException(
-                    "unknown source '"
+                    "has unknown source '"
                             + s
-                            + "'. Use id, username, email, firstName, lastName, realm or"
+                            + "'; use id, username, email, firstName, lastName, realm or"
                             + " attr:<name>");
         }
         return s;

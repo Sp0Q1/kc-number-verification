@@ -241,7 +241,7 @@ public class VerificationClient {
      * overrides, anything non-ASCII) becomes {@code ?}, so the body can neither forge log entries
      * nor confuse a terminal. Only a short prefix is kept, and only that prefix is scanned.
      */
-    static String quotable(String body) {
+    private static String quotable(String body) {
         int keep = Math.min(body.length(), MAX_QUOTED_BODY);
         StringBuilder out = new StringBuilder(keep + 24);
         for (int i = 0; i < keep; i++) {

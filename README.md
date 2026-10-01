@@ -316,6 +316,10 @@ and toolchain produce a byte-identical JAR.
   `number_verification_already_used`.
 - Configuration is re-read from the realm on every attempt, so console changes take
   effect on the next login with no restart and no cache flush.
+- Startup defaults and console values go through one parser with one rule set. Stored
+  realm config that somehow bypassed validation (a realm import, for instance) is
+  logged with the offending setting and the user sees "temporarily unavailable";
+  it never produces an error page.
 - The identifier is resolved fresh on every attempt, so it always matches the account
   currently authenticating — there is no way to verify a number against one account and
   have it apply to another.
