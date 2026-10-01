@@ -86,6 +86,14 @@ environment-variable deployment keeps working unchanged after upgrading.
 
 **Authentication → Required actions → Verify Number → ⚙ (gear icon)**
 
+> **Order matters.** Turn the action **on first**, reload the page, and only then open
+> the gear and save the settings. The Enabled and Default switches write the whole
+> required-action record back, including the configuration as it was when the page
+> loaded, and saving in the gear dialog does not refresh that copy. Configure-then-enable
+> therefore silently wipes the configuration (observed on Keycloak 26.6; the login then
+> fails with "temporarily unavailable" and the log says `No verification endpoint
+> configured`). After flipping either switch, reload before touching the gear again.
+
 | Setting | Default | Purpose |
 |---|---|---|
 | Verification endpoint | – | Full URL of the REST API |
