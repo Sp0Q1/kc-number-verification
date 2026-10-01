@@ -11,6 +11,8 @@
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Reproducible builds: same sources + same toolchain => byte-identical JAR. -->
+    <project.build.outputTimestamp>2026-10-01T00:00:00Z</project.build.outputTimestamp>
     <!-- Match this to the Keycloak version you deploy to. -->
     <keycloak.version>26.8.0</keycloak.version>
   </properties>
@@ -87,6 +89,63 @@
             <goals>
               <goal>enforce</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+                Static analysis: SpotBugs with the Find Security Bugs rule set, at
+                maximum effort and lowest threshold. Bound to 'verify' like Spotless,
+                so 'mvn package' is never blocked; CI runs it in the Lint workflow.
+                Suppressions live in spotbugs-exclude.xml.
+            -->
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>4.10.4.1</version>
+        <configuration>
+          <effort>Max</effort>
+          <threshold>Low</threshold>
+          <failOnError>true</failOnError>
+          <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+          <plugins>
+            <plugin>
+              <groupId>com.h3xstream.findsecbugs</groupId>
+              <artifactId>findsecbugs-plugin</artifactId>
+              <version>1.14.0</version>
+            </plugin>
+          </plugins>
+        </configuration>
+        <executions>
+          <execution>
+            <id>spotbugs-check</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+                Software bill of materials (CycloneDX JSON) next to the JAR. The
+                provider bundles nothing, so the SBOM documents exactly that.
+            -->
+      <plugin>
+        <groupId>org.cyclonedx</groupId>
+        <artifactId>cyclonedx-maven-plugin</artifactId>
+        <version>2.9.3</version>
+        <configuration>
+          <outputFormat>json</outputFormat>
+          <outputName>sbom</outputName>
+        </configuration>
+        <executions>
+          <execution>
+            <id>sbom</id>
+            <goals>
+              <goal>makeAggregateBom</goal>
+            </goals>
+            <phase>package</phase>
           </execution>
         </executions>
       </plugin>

@@ -1,6 +1,7 @@
 name: Lint
 
-# Non-packaging checks: code formatting (Spotless) and build hygiene (Enforcer).
+# Non-packaging checks: code formatting (Spotless), build hygiene (Enforcer)
+# and static analysis (SpotBugs with Find Security Bugs).
 # Kept separate from the JAR build so a formatting nit never blocks producing a
 # usable artifact.
 #
@@ -35,3 +36,6 @@ jobs:
 
       - name: Check build hygiene (Enforcer)
         run: mvn --batch-mode --no-transfer-progress enforcer:enforce
+
+      - name: Static analysis (SpotBugs + Find Security Bugs)
+        run: mvn --batch-mode --no-transfer-progress compile spotbugs:check

@@ -92,13 +92,15 @@ environment-variable deployment keeps working unchanged after upgrading.
 | Account identifier source | `id` | Which user property identifies the account |
 | Account identifier field name | derived | JSON/query field it is sent under |
 | Number field name | `number` | Field the submitted number is sent under |
-| Additional fields | – | Extra fields to include |
+| Additional fields | – | Extra fields to include; nothing beyond the identifier by default |
 | Response field | auto-detect | Field or JSON pointer holding the boolean |
 | Max attempts per login | `5` | Failed tries before the current login aborts; `0` = unlimited |
 | Max number length | `64` | Longest input accepted from the form |
+| Number pattern | – | Optional regular expression the whole input must match |
 | Store number as attribute | – | Save the verified number under this attribute |
 | Enforce local uniqueness | `false` | Reject a number already bound to another account |
 | Apply to existing users | `true` | Also ask accounts that predate the action, at their next login |
+| Allow plain http endpoint | `false` | Permit an `http://` endpoint; off means https only |
 
 Values are validated on save: a malformed URL, an unknown identifier source, or
 uniqueness enforcement without a storage attribute are all rejected with an inline
@@ -120,9 +122,11 @@ NUMBER_VERIFICATION_EXTRA_FIELDS=email
 NUMBER_VERIFICATION_RESPONSE_FIELD=/data/verified
 NUMBER_VERIFICATION_MAX_ATTEMPTS=5
 NUMBER_VERIFICATION_MAX_LENGTH=64
+NUMBER_VERIFICATION_PATTERN=[0-9]{6,12}
 NUMBER_VERIFICATION_STORE_ATTRIBUTE=verifiedNumber
 NUMBER_VERIFICATION_ENFORCE_UNIQUE=true
 NUMBER_VERIFICATION_APPLY_TO_EXISTING_USERS=true
+NUMBER_VERIFICATION_ALLOW_INSECURE_HTTP=false
 ```
 
 Server-wide values are checked at startup: an unknown identifier source, a malformed
@@ -150,9 +154,8 @@ spec, or `jsonFieldName=source` when the backend wants a different name:
 username,email,tenant=attr:tenantId
 ```
 
-To send *only* the number and the identifier, clear the field in the console or set
-`NUMBER_VERIFICATION_EXTRA_FIELDS=` to an empty value. Leaving the variable unset keeps
-the default `username,email,realm`.
+By default nothing beyond the number and the identifier is sent. List extra fields
+only if the backend needs them; each one is personal data leaving Keycloak.
 
 If the resolved identifier is empty for a user, verification is refused rather than
 sending an anonymous request.
@@ -191,23 +194,25 @@ asked.
 
 ## Backend API contract
 
+The endpoint must be `https://`. Plain `http://` is refused at startup and on save
+unless **Allow plain http endpoint** is on; reserve that for local testing or a
+trusted private network.
+
 With default settings, Keycloak sends `POST <endpoint>` with
 `Content-Type: application/json`:
 
 ```json
 {
   "number": "123456",
-  "userId": "8f3c1e2a-...",
-  "username": "alice",
-  "email": "alice@example.com",
-  "realm": "myrealm"
+  "userId": "8f3c1e2a-..."
 }
 ```
 
+Additional fields such as `username,email,realm` are appended only if configured.
 With `METHOD=GET` the same fields become query parameters:
 
 ```
-GET /verify?number=123456&userId=8f3c1e2a-...&username=alice
+GET /verify?number=123456&userId=8f3c1e2a-...
 ```
 
 Your endpoint should answer whether *this* number belongs to *this* account. Any of
@@ -219,6 +224,11 @@ true
 {"valid": false}
 {"result": true}
 ```
+
+Auto-detection is a convenience for getting started. In production, set **Response
+field** explicitly so an unexpected response shape fails instead of being guessed at.
+Response bodies larger than the server's `max-consumed-response-size` (10 MB by
+default) are rejected.
 
 A `404` is treated as a clean "not verified". Other non-2xx responses, unreachable
 services, or unparseable bodies **fail closed** — the user sees a "temporarily
@@ -234,7 +244,8 @@ you always get a usable artifact even while cleaning up lint.
 | Tool | File | What it does |
 |---|---|---|
 | Build | `.github/workflows/build.yml` | Compiles the JAR, uploads it as an artifact / release asset |
-| Lint | `.github/workflows/lint.yml` | Spotless formatting + Enforcer hygiene checks |
+| Lint | `.github/workflows/lint.yml` | Spotless formatting, Enforcer hygiene, SpotBugs + Find Security Bugs |
+| SBOM | `pom.xml` (CycloneDX) | `target/sbom.json`, attached to every build and release |
 | CodeQL | `.github/workflows/codeql.yml` | GitHub-native SAST for Java (security + quality queries) |
 | Semgrep | `.github/workflows/semgrep.yml` | Rule-pack SAST (java, security-audit, secrets, OWASP Top Ten) |
 | Dependabot | `.github/dependabot.yml` | Weekly Maven + Actions dependency PRs, grouped |
@@ -265,6 +276,13 @@ Maven Enforcer runs during every build and fails fast on an unsupported JDK/Mave
 version or duplicate dependency declarations. Adjust the rules in `pom.xml` under the
 `maven-enforcer-plugin` block.
 
+### Static analysis
+
+SpotBugs with the Find Security Bugs rules runs at maximum effort during `mvn verify`
+and in the Lint workflow. Suppressions go in `spotbugs-exclude.xml`, each with a
+reason. Builds are reproducible (`project.build.outputTimestamp`), so the same sources
+and toolchain produce a byte-identical JAR.
+
 ## How it works
 
 - On success the user gets the attribute `numberVerified=true` and the action is
@@ -278,7 +296,12 @@ version or duplicate dependency declarations. Adjust the rules in `pom.xml` unde
   password or OTP; a locked user sees a "too many attempts" message on this form.
   Enable it, or rate-limit at the backend, before exposing this to untrusted users.
 - Input is capped at `MAX_LENGTH` characters both in the form and server-side before
-  anything is sent to the backend or stored.
+  anything is sent to the backend or stored; an optional `PATTERN` rejects anything
+  else before it leaves the server.
+- With uniqueness enforcement on, a number already bound to another account is refused
+  with the same message as a wrong number, so the form cannot be used to discover
+  which numbers exist. The event (`number_verification_already_used`) and the server
+  log record the real reason.
 - `numberVerified` is an *unmanaged* user attribute. It survives admin edits, but the
   admin console only shows it when **Unmanaged attributes** is enabled in the realm's
   user profile settings. Enable that if admins need to inspect or reset it.
@@ -316,6 +339,7 @@ class H(BaseHTTPRequestHandler):
 HTTPServer(('0.0.0.0', 9000), H).serve_forever()"
 ```
 
-Then set `NUMBER_VERIFICATION_ENDPOINT=http://localhost:9000/verify`, register a new
+Then set `NUMBER_VERIFICATION_ENDPOINT=http://localhost:9000/verify` together with
+`NUMBER_VERIFICATION_ALLOW_INSECURE_HTTP=true` (the stub has no TLS), register a new
 user, look up its id in the admin console, add it to `VALID`, and confirm the number
 is accepted for that account and rejected for any other.

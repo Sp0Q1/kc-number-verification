@@ -2,20 +2,25 @@ package com.example.keycloak.numberverification;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URISyntaxException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.util.EntityUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.httpclient.HttpClientProvider;
+import org.keycloak.connections.httpclient.SafeInputStream;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -28,8 +33,9 @@ import org.keycloak.util.JsonSerialization;
  * number can be the Keycloak user id, the username, or any custom user attribute, under whatever
  * JSON field name the backend expects.
  *
- * <p>Requests go through Keycloak's shared {@link HttpClientProvider}, so connection pooling and
- * the server-wide socket timeout (5 s by default) apply without any extra configuration.
+ * <p>Requests go through Keycloak's shared {@link HttpClientProvider}, so connection pooling, the
+ * server-wide socket timeout (5 s by default) and the maximum response size (10 MB by default)
+ * apply without any extra configuration.
  */
 public class VerificationClient {
 
@@ -71,13 +77,11 @@ public class VerificationClient {
         }
         request.setHeader("Accept", "application/json");
 
-        CloseableHttpClient http = session.getProvider(HttpClientProvider.class).getHttpClient();
+        HttpClientProvider provider = session.getProvider(HttpClientProvider.class);
+        CloseableHttpClient http = provider.getHttpClient();
         try (CloseableHttpResponse response = http.execute(request)) {
             int status = response.getStatusLine().getStatusCode();
-            String body =
-                    response.getEntity() == null
-                            ? ""
-                            : EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            String body = readBody(response.getEntity(), provider.getMaxConsumedResponseSize());
 
             // Some APIs express "this number does not belong to this account" as 404.
             if (status == 404) {
@@ -92,7 +96,20 @@ public class VerificationClient {
             }
             return parse(body);
         } catch (IOException e) {
-            throw new VerificationException("Could not reach verification service", e);
+            throw new VerificationException(
+                    "Verification service call failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** Reads at most {@code maxBytes}; a larger body is an error, not a truncated parse. */
+    private static String readBody(HttpEntity entity, long maxBytes) throws IOException {
+        if (entity == null) {
+            return "";
+        }
+        Charset charset = ContentType.getOrDefault(entity).getCharset();
+        try (InputStream in = new SafeInputStream(entity.getContent(), maxBytes)) {
+            return new String(
+                    in.readAllBytes(), charset == null ? StandardCharsets.UTF_8 : charset);
         }
     }
 
@@ -184,8 +201,9 @@ public class VerificationClient {
         } catch (IOException e) {
             LOG.debugf(e, "Verification response was not JSON: %s", abbreviate(trimmed));
         }
-        if ("true".equalsIgnoreCase(trimmed) || "false".equalsIgnoreCase(trimmed)) {
-            return Boolean.parseBoolean(trimmed);
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if ("true".equals(lower) || "false".equals(lower)) {
+            return "true".equals(lower);
         }
         throw new VerificationException(
                 "Unrecognised verification response: " + abbreviate(trimmed));

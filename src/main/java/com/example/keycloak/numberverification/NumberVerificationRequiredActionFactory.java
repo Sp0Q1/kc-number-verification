@@ -3,8 +3,11 @@ package com.example.keycloak.numberverification;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.function.Supplier;
+import java.util.function.Function;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.RequiredActionFactory;
@@ -50,11 +53,9 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                         VerificationConfig.IDENTIFIER_FIELD,
                         "IDENTIFIER_FIELD",
                         UserFieldResolver.defaultFieldName(identifierSource));
-        // Present-but-empty means "send nothing extra"; absent means the default list.
-        String extraRaw = getRaw(scope, VerificationConfig.EXTRA_FIELDS, "EXTRA_FIELDS");
-        if (extraRaw == null) {
-            extraRaw = "username,email,realm";
-        }
+        // Privacy by default: only the identifier and the number leave the server unless
+        // an admin lists more.
+        String extraRaw = get(scope, VerificationConfig.EXTRA_FIELDS, "EXTRA_FIELDS", "");
         String responseField =
                 get(scope, VerificationConfig.RESPONSE_FIELD, "RESPONSE_FIELD", null);
 
@@ -68,6 +69,13 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                         VerificationConfig.APPLY_TO_EXISTING_USERS,
                         "APPLY_TO_EXISTING_USERS",
                         true);
+        boolean allowInsecureHttp =
+                getBoolean(
+                        scope,
+                        VerificationConfig.ALLOW_INSECURE_HTTP,
+                        "ALLOW_INSECURE_HTTP",
+                        false);
+        Pattern pattern = requirePattern(get(scope, VerificationConfig.PATTERN, "PATTERN", null));
         int maxAttempts =
                 getInt(
                         scope,
@@ -86,9 +94,8 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         if (endpoint != null) {
             requireUrl(
                     endpoint,
-                    () ->
-                            new IllegalStateException(
-                                    ENV_PREFIX + "ENDPOINT is not a valid http(s) URL"));
+                    allowInsecureHttp,
+                    message -> new IllegalStateException(ENV_PREFIX + "ENDPOINT " + message));
         }
         VerificationConfig.Method method = VerificationConfig.parseMethod(methodRaw, null);
         if (method == null) {
@@ -116,9 +123,11 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                         responseField,
                         maxAttempts,
                         maxLength,
+                        pattern,
                         enforceUnique,
                         storeAttribute,
-                        applyToExistingUsers);
+                        applyToExistingUsers,
+                        allowInsecureHttp);
 
         if (defaults.hasEndpoint()) {
             LOG.infof("Default number verification endpoint: %s %s", method, endpoint);
@@ -132,14 +141,11 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
     }
 
     private static String get(Config.Scope scope, String key, String envSuffix, String fallback) {
-        String value = getRaw(scope, key, envSuffix);
-        return (value == null || value.isBlank()) ? fallback : value.trim();
-    }
-
-    /** SPI option first, then the environment variable; {@code null} only if neither is set. */
-    private static String getRaw(Config.Scope scope, String key, String envSuffix) {
         String value = scope.get(key);
-        return value != null ? value : System.getenv(ENV_PREFIX + envSuffix);
+        if (value == null) {
+            value = System.getenv(ENV_PREFIX + envSuffix);
+        }
+        return (value == null || value.isBlank()) ? fallback : value.trim();
     }
 
     private static boolean getBoolean(
@@ -148,8 +154,9 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         if (raw == null) {
             return fallback;
         }
-        if (raw.equalsIgnoreCase("true") || raw.equalsIgnoreCase("false")) {
-            return Boolean.parseBoolean(raw);
+        String lower = raw.toLowerCase(Locale.ROOT);
+        if ("true".equals(lower) || "false".equals(lower)) {
+            return "true".equals(lower);
         }
         throw new IllegalStateException(ENV_PREFIX + envSuffix + " must be true or false");
     }
@@ -180,17 +187,42 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
         }
     }
 
-    private static void requireUrl(String endpoint, Supplier<? extends RuntimeException> error) {
+    private static Pattern requirePattern(String raw) {
+        if (raw == null) {
+            return null;
+        }
         try {
-            URI uri = new URI(endpoint.trim());
-            boolean http =
-                    "http".equalsIgnoreCase(uri.getScheme())
-                            || "https".equalsIgnoreCase(uri.getScheme());
-            if (!http || uri.getHost() == null) {
-                throw error.get();
-            }
+            return Pattern.compile(raw);
+        } catch (PatternSyntaxException e) {
+            throw new IllegalStateException(
+                    ENV_PREFIX + "PATTERN is not a valid regular expression: " + e.getDescription(),
+                    e);
+        }
+    }
+
+    /**
+     * Accepts an absolute https URL. Plain http is refused unless explicitly allowed, so a
+     * verification secret or personal data cannot be sent in clear by a typo.
+     */
+    private static void requireUrl(
+            String endpoint,
+            boolean allowInsecureHttp,
+            Function<String, ? extends RuntimeException> error) {
+        URI uri;
+        try {
+            uri = new URI(endpoint.trim());
         } catch (URISyntaxException e) {
-            throw error.get();
+            throw error.apply("is not a valid URL");
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        if (uri.getHost() == null || !(scheme.equals("https") || scheme.equals("http"))) {
+            throw error.apply("must be an absolute http(s) URL");
+        }
+        if (scheme.equals("http") && !allowInsecureHttp) {
+            throw error.apply(
+                    "uses plain http; use https or explicitly allow insecure http ("
+                            + VerificationConfig.ALLOW_INSECURE_HTTP
+                            + ")");
         }
     }
 
@@ -270,7 +302,7 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .helpText(
                         "Comma-separated extra fields to send, e.g. "
                                 + "username,email,tenant=attr:tenantId. Same source syntax as the "
-                                + "identifier.")
+                                + "identifier. Nothing beyond the identifier is sent by default.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
@@ -297,6 +329,23 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .helpText("Longest input accepted from the form, in characters.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue(String.valueOf(VerificationConfig.DEFAULT_MAX_LENGTH))
+                .add()
+                .property()
+                .name(VerificationConfig.PATTERN)
+                .label("Number pattern")
+                .helpText(
+                        "Optional regular expression the whole input must match, e.g. [0-9]{6,12}. "
+                                + "Rejected input never reaches the backend.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name(VerificationConfig.ALLOW_INSECURE_HTTP)
+                .label("Allow plain http endpoint")
+                .helpText(
+                        "Off: the endpoint must be https. Turn on only for local testing or a "
+                                + "trusted private network.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("false")
                 .add()
                 .property()
                 .name(VerificationConfig.STORE_ATTRIBUTE)
@@ -335,13 +384,18 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
             KeycloakSession session, RealmModel realm, RequiredActionConfigModel model) {
         RequiredActionFactory.super.validateConfig(session, realm, model);
 
+        String insecureRaw = model.getConfigValue(VerificationConfig.ALLOW_INSECURE_HTTP);
+        boolean allowInsecureHttp =
+                insecureRaw == null || insecureRaw.isBlank()
+                        ? defaults.allowInsecureHttp()
+                        : Boolean.parseBoolean(insecureRaw.trim());
+
         String endpoint = model.getConfigValue(VerificationConfig.ENDPOINT);
         if (endpoint != null && !endpoint.isBlank()) {
             requireUrl(
                     endpoint,
-                    () ->
-                            new ModelValidationException(
-                                    "Verification endpoint must be a valid http or https URL"));
+                    allowInsecureHttp,
+                    message -> new ModelValidationException("Verification endpoint " + message));
         } else if (!defaults.hasEndpoint()) {
             throw new ModelValidationException(
                     "A verification endpoint is required: no "
@@ -363,6 +417,16 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
             VerificationConfig.parseFieldList(extras)
                     .values()
                     .forEach(spec -> validateSource(spec, "Additional fields"));
+        }
+
+        String pattern = model.getConfigValue(VerificationConfig.PATTERN);
+        if (pattern != null && !pattern.isBlank()) {
+            try {
+                Pattern.compile(pattern.trim());
+            } catch (PatternSyntaxException e) {
+                throw new ModelValidationException(
+                        "Number pattern is not a valid regular expression: " + e.getDescription());
+            }
         }
 
         validateInt(model.getConfigValue(VerificationConfig.MAX_ATTEMPTS), "Max attempts", 0);
