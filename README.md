@@ -9,7 +9,10 @@ because required actions can be flagged as *default* — Keycloak then attaches 
 automatically to every newly created user, whether created via self-registration,
 the admin console, the Admin REST API, or identity-brokered first login.
 
-Requires **Keycloak 25 or newer** (it uses the configurable-required-action API).
+Requires **Keycloak 25 or newer** (it uses the configurable-required-action API). One JAR
+runs on every 25.x and 26.x: the only SPI that changed shape in that range, the brute-force
+detector, is resolved at runtime and was checked against the 25.0, 26.0, 26.6 and 26.8 SPI
+binaries.
 
 ## Installation vs. administration
 
