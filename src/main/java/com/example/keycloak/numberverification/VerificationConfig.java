@@ -2,7 +2,10 @@ package com.example.keycloak.numberverification;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import org.keycloak.models.RequiredActionConfigModel;
 
 /**
@@ -24,9 +27,11 @@ public record VerificationConfig(
         String responseField,
         int maxAttempts,
         int maxLength,
+        Pattern pattern,
         boolean enforceUnique,
         String storeAttribute,
-        boolean applyToExistingUsers) {
+        boolean applyToExistingUsers,
+        boolean allowInsecureHttp) {
 
     // Config keys - these are the property names shown in the admin console and used
     // by the Admin REST API.
@@ -41,9 +46,11 @@ public record VerificationConfig(
     public static final String RESPONSE_FIELD = "responseField";
     public static final String MAX_ATTEMPTS = "maxAttempts";
     public static final String MAX_LENGTH = "maxLength";
+    public static final String PATTERN = "pattern";
     public static final String STORE_ATTRIBUTE = "storeAttribute";
     public static final String ENFORCE_UNIQUE = "enforceUnique";
     public static final String APPLY_TO_EXISTING_USERS = "applyToExistingUsers";
+    public static final String ALLOW_INSECURE_HTTP = "allowInsecureHttp";
 
     public static final int DEFAULT_MAX_ATTEMPTS = 5;
     public static final int DEFAULT_MAX_LENGTH = 64;
@@ -113,9 +120,11 @@ public record VerificationConfig(
                 str(model, RESPONSE_FIELD, defaults.responseField),
                 parseInt(str(model, MAX_ATTEMPTS, null), defaults.maxAttempts),
                 parseInt(str(model, MAX_LENGTH, null), defaults.maxLength),
+                parsePattern(str(model, PATTERN, null), defaults.pattern),
                 bool(model, ENFORCE_UNIQUE, defaults.enforceUnique),
                 str(model, STORE_ATTRIBUTE, defaults.storeAttribute),
-                bool(model, APPLY_TO_EXISTING_USERS, defaults.applyToExistingUsers));
+                bool(model, APPLY_TO_EXISTING_USERS, defaults.applyToExistingUsers),
+                bool(model, ALLOW_INSECURE_HTTP, defaults.allowInsecureHttp));
     }
 
     private static String str(RequiredActionConfigModel model, String key, String fallback) {
@@ -137,7 +146,7 @@ public record VerificationConfig(
             return fallback;
         }
         try {
-            return Method.valueOf(raw.trim().toUpperCase());
+            return Method.valueOf(raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return fallback;
         }
@@ -150,6 +159,18 @@ public record VerificationConfig(
         try {
             return Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** A blank or invalid expression keeps the fallback; the console validates syntax on save. */
+    public static Pattern parsePattern(String raw, Pattern fallback) {
+        if (!isSet(raw)) {
+            return fallback;
+        }
+        try {
+            return Pattern.compile(raw.trim());
+        } catch (PatternSyntaxException e) {
             return fallback;
         }
     }

@@ -105,6 +105,10 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
             challengeWithFieldError(context, config, "numberVerificationTooLong");
             return;
         }
+        if (config.pattern() != null && !config.pattern().matcher(number).matches()) {
+            challengeWithFieldError(context, config, "numberVerificationInvalidFormat");
+            return;
+        }
 
         BruteForceProtector protector = session.getProvider(BruteForceProtector.class);
         if (realm.isBruteForceProtected()
@@ -114,14 +118,16 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
             return;
         }
 
-        // Optional local guard: refuse a number already bound to a different account.
+        // Optional local guard: refuse a number already bound to a different account. The
+        // user gets the same message as for a wrong number, so the form cannot be used to
+        // find out which numbers exist; the event and the log carry the real reason.
         if (isClaimedByAnotherUser(session, realm, user, number, config)) {
             LOG.warnf(
                     "User %s submitted a number already bound to another account",
                     user.getUsername());
             recordFailedAttempt(context, protector);
             event.error("number_verification_already_used");
-            challengeWithFieldError(context, config, "numberVerificationAlreadyUsed");
+            challengeWithFieldError(context, config, "numberVerificationInvalid");
             return;
         }
 

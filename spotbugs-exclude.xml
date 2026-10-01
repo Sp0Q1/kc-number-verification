@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    SpotBugs suppressions. Keep this list short and explain every entry.
+-->
+<FindBugsFilter xmlns="https://github.com/spotbugs/filter/3.0.0">
+  <!--
+      Startup validation deliberately throws IllegalStateException so that a
+      misconfigured server fails to boot with the offending variable named.
+  -->
+  <Match>
+    <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION"/>
+  </Match>
+  <!--
+      IMPROPER_UNICODE flags any case mapping. Here it is only used to accept
+      fixed ASCII keywords case-insensitively (http/https, true/false, POST/GET)
+      with Locale.ROOT; no identity, lookup or security decision depends on it.
+  -->
+  <Match>
+    <Bug pattern="IMPROPER_UNICODE"/>
+  </Match>
+</FindBugsFilter>
