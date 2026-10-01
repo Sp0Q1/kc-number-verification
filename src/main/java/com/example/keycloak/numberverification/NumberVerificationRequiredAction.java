@@ -13,7 +13,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.FormMessage;
-import org.keycloak.services.managers.BruteForceProtector;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
@@ -134,9 +133,7 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
             return;
         }
 
-        BruteForceProtector protector = session.getProvider(BruteForceProtector.class);
-        if (realm.isBruteForceProtected()
-                && protector.isTemporarilyDisabled(session, realm, user)) {
+        if (BruteForceReporter.isTemporarilyDisabled(session, realm, user)) {
             event.error(Errors.USER_TEMPORARILY_DISABLED);
             challengeWithError(context, config, "numberVerificationLocked");
             return;
@@ -147,7 +144,7 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         // find out which numbers exist; the event and the log carry the real reason.
         if (isClaimedByAnotherUser(session, realm, user, number, config)) {
             LOG.warnf("User %s submitted a number already bound to another account", user.getId());
-            recordFailedAttempt(context, protector);
+            recordFailedAttempt(context);
             event.error("number_verification_already_used");
             challengeWithFieldError(context, config, "numberVerificationInvalid");
             return;
@@ -165,7 +162,7 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         }
 
         if (!verified) {
-            int attempts = recordFailedAttempt(context, protector);
+            int attempts = recordFailedAttempt(context);
             event.detail("attempts", String.valueOf(attempts))
                     .error("number_verification_rejected");
 
@@ -245,17 +242,16 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
      *
      * @return failures so far in this login
      */
-    private static int recordFailedAttempt(
-            RequiredActionContext context, BruteForceProtector protector) {
+    private static int recordFailedAttempt(RequiredActionContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         int attempts = VerificationConfig.parseInt(authSession.getAuthNote(ATTEMPTS_NOTE), 0) + 1;
         authSession.setAuthNote(ATTEMPTS_NOTE, String.valueOf(attempts));
-
-        RealmModel realm = context.getRealm();
-        if (realm.isBruteForceProtected()) {
-            protector.failedLogin(
-                    realm, context.getUser(), context.getConnection(), context.getUriInfo(), null);
-        }
+        BruteForceReporter.failedLogin(
+                context.getSession(),
+                context.getRealm(),
+                context.getUser(),
+                context.getConnection(),
+                context.getUriInfo());
         return attempts;
     }
 
