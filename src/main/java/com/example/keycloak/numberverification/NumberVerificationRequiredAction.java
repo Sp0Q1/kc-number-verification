@@ -65,7 +65,14 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         if (user == null || isVerified(user)) {
             return;
         }
-        if (configOf(context).applyToExistingUsers()) {
+        boolean applyToExistingUsers;
+        try {
+            applyToExistingUsers = configOf(context).applyToExistingUsers();
+        } catch (VerificationConfig.InvalidSettingException e) {
+            logMisconfiguration(context, e);
+            applyToExistingUsers = true; // fail closed: the user is challenged and told to wait
+        }
+        if (applyToExistingUsers) {
             user.addRequiredAction(PROVIDER_ID);
         }
     }
@@ -76,7 +83,15 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
             context.success();
             return;
         }
-        context.challenge(form(context, configOf(context)).createForm(FORM_TEMPLATE));
+        VerificationConfig config;
+        try {
+            config = configOf(context);
+        } catch (VerificationConfig.InvalidSettingException e) {
+            logMisconfiguration(context, e);
+            challengeWithError(context, defaults, "numberVerificationUnavailable");
+            return;
+        }
+        context.challenge(form(context, config).createForm(FORM_TEMPLATE));
     }
 
     @Override
@@ -89,13 +104,22 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         KeycloakSession session = context.getSession();
         UserModel user = context.getUser();
         RealmModel realm = context.getRealm();
-        VerificationConfig config = configOf(context);
 
         EventBuilder event =
                 context.getEvent()
                         .clone()
                         .event(EventType.CUSTOM_REQUIRED_ACTION)
                         .detail(Details.CUSTOM_REQUIRED_ACTION, PROVIDER_ID);
+
+        VerificationConfig config;
+        try {
+            config = configOf(context);
+        } catch (VerificationConfig.InvalidSettingException e) {
+            logMisconfiguration(context, e);
+            event.error("number_verification_misconfigured");
+            challengeWithError(context, defaults, "numberVerificationUnavailable");
+            return;
+        }
 
         if (number.isEmpty()) {
             challengeWithFieldError(context, config, "numberVerificationMissing");
@@ -161,6 +185,14 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         context.getAuthenticationSession().removeAuthNote(ATTEMPTS_NOTE);
         event.success();
         context.success();
+    }
+
+    /** Stored realm config can bypass save-time validation (realm import); never let it 500. */
+    private static void logMisconfiguration(
+            RequiredActionContext context, VerificationConfig.InvalidSettingException e) {
+        LOG.errorf(
+                "Invalid %s configuration in realm %s: setting '%s' %s",
+                PROVIDER_ID, context.getRealm().getName(), e.key(), e.getMessage());
     }
 
     private static boolean isVerified(UserModel user) {
