@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -43,6 +44,9 @@ public class VerificationClient {
 
     /** Longest slice of a backend response that may end up in a log line or event. */
     private static final int MAX_QUOTED_BODY = 200;
+
+    /** Line breaks and other control characters, which could forge log lines if quoted raw. */
+    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cntrl}\\u2028\\u2029]+");
 
     private static final String[] AUTO_DETECT_FIELDS = {"verified", "valid", "result", "success"};
 
@@ -199,14 +203,13 @@ public class VerificationClient {
                 }
             }
         } catch (IOException e) {
-            LOG.debugf(e, "Verification response was not JSON: %s", abbreviate(trimmed));
+            LOG.debugf(e, "Verification response was not JSON: %s", quotable(trimmed));
         }
         String lower = trimmed.toLowerCase(Locale.ROOT);
         if ("true".equals(lower) || "false".equals(lower)) {
             return "true".equals(lower);
         }
-        throw new VerificationException(
-                "Unrecognised verification response: " + abbreviate(trimmed));
+        throw new VerificationException("Unrecognised verification response: " + quotable(trimmed));
     }
 
     /** Accepts either "verified" or a JSON pointer such as "/data/verified". */
@@ -214,11 +217,17 @@ public class VerificationClient {
         return field.startsWith("/") ? field : "/" + field;
     }
 
-    /** Keeps foreign response bodies out of the logs beyond what is needed to debug them. */
-    private static String abbreviate(String body) {
-        return body.length() <= MAX_QUOTED_BODY
-                ? body
-                : body.substring(0, MAX_QUOTED_BODY) + "... [" + body.length() + " chars]";
+    /**
+     * Makes a foreign response body safe to quote in a log line or exception message: line breaks
+     * and other control characters are collapsed to a space so the body cannot forge log entries,
+     * and only a short prefix is kept.
+     */
+    private static String quotable(String body) {
+        String flat =
+                CONTROL_CHARS.matcher(body.replace('\n', ' ').replace('\r', ' ')).replaceAll(" ");
+        return flat.length() <= MAX_QUOTED_BODY
+                ? flat
+                : flat.substring(0, MAX_QUOTED_BODY) + "... [" + body.length() + " chars]";
     }
 
     public static class VerificationException extends RuntimeException {
