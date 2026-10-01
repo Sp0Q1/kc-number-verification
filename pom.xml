@@ -95,6 +95,11 @@
         <artifactId>maven-deploy-plugin</artifactId>
         <version>3.2.0</version>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-site-plugin</artifactId>
+        <version>3.22.0</version>
+      </plugin>
 
       <!--
                 Build hygiene: fails fast on the wrong toolchain or duplicate
@@ -119,9 +124,7 @@
             </requireJavaVersion>
             <banDuplicatePomDependencyVersions/>
             <!-- Reproducible builds need every lifecycle plugin pinned. -->
-            <requirePluginVersions>
-              <phases>clean,deploy</phases>
-            </requirePluginVersions>
+            <requirePluginVersions/>
           </rules>
         </configuration>
         <executions>
