@@ -53,10 +53,47 @@
   <build>
     <finalName>number-verification</finalName>
     <plugins>
+      <!--
+                Every lifecycle plugin is pinned. Maven's built-in defaults differ
+                between distributions (Debian's Maven 3.9.9 ships maven-jar-plugin
+                3.1.2, which ignores outputTimestamp), so without pins the same
+                commit produces different JARs on different machines. The Enforcer
+                rule below fails the build if a pin goes missing.
+            -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>3.5.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.5.0</version>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.16.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.1</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-install-plugin</artifactId>
+        <version>3.2.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <version>3.2.0</version>
       </plugin>
 
       <!--
@@ -81,6 +118,10 @@
               <version>[17,)</version>
             </requireJavaVersion>
             <banDuplicatePomDependencyVersions/>
+            <!-- Reproducible builds need every lifecycle plugin pinned. -->
+            <requirePluginVersions>
+              <phases>clean,deploy</phases>
+            </requirePluginVersions>
           </rules>
         </configuration>
         <executions>

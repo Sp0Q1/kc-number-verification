@@ -286,8 +286,11 @@ version or duplicate dependency declarations. Adjust the rules in `pom.xml` unde
 
 SpotBugs with the Find Security Bugs rules runs at maximum effort during `mvn verify`
 and in the Lint workflow. Suppressions go in `spotbugs-exclude.xml`, each with a
-reason. Builds are reproducible (`project.build.outputTimestamp`), so the same sources
-and toolchain produce a byte-identical JAR.
+reason. Builds are reproducible: every lifecycle plugin is pinned and
+`project.build.outputTimestamp` is set, so the same commit built with the same JDK
+major produces a byte-identical JAR on any machine, and the Enforcer fails the build
+if a plugin pin goes missing. The CI artifact and a local build can be compared by
+SHA-256.
 
 ## How it works
 
