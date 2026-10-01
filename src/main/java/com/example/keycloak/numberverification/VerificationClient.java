@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import org.apache.http.HttpEntity;
+import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.Configurable;
@@ -107,16 +108,20 @@ public class VerificationClient {
 
     /**
      * Per-request settings layered on the shared client's own: redirects are never followed (the
-     * API key must not travel to a Location of the backend's choosing) and connecting is bounded
-     * even when the server-wide client leaves it unbounded. Everything else, notably the socket
-     * timeout the admin configured, is kept.
+     * API key must not travel to a Location of the backend's choosing), cookies the backend sets
+     * are ignored (the client is shared by every user's login; a backend session must not leak
+     * between them), and connecting is bounded even when the server-wide client leaves it
+     * unbounded. Everything else, notably the socket timeout the admin configured, is kept.
      */
     private static RequestConfig requestConfig(CloseableHttpClient http) {
         RequestConfig base =
                 http instanceof Configurable configurable && configurable.getConfig() != null
                         ? configurable.getConfig()
                         : RequestConfig.DEFAULT;
-        RequestConfig.Builder builder = RequestConfig.copy(base).setRedirectsEnabled(false);
+        RequestConfig.Builder builder =
+                RequestConfig.copy(base)
+                        .setRedirectsEnabled(false)
+                        .setCookieSpec(CookieSpecs.IGNORE_COOKIES);
         if (base.getConnectTimeout() <= 0) {
             builder.setConnectTimeout(FALLBACK_CONNECT_TIMEOUT_MS);
         }
