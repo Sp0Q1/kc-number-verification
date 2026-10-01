@@ -134,7 +134,9 @@ URL or a non-numeric limit stops Keycloak from starting, with the variable named
 the log, rather than surfacing as an error page on the first login.
 
 Secrets are better placed here than in the console: realm config is readable by any
-admin with realm-management rights and is included in realm exports.
+admin with realm-management rights and is included in realm exports. Note that a realm
+admin can also point the endpoint anywhere, so treat realm-management rights as the
+right to decide where users' data is sent.
 
 The API key is sent verbatim in the configured header. With the default
 `Authorization` header that means the value itself must carry the scheme, for
@@ -209,7 +211,8 @@ With default settings, Keycloak sends `POST <endpoint>` with
 ```
 
 Additional fields such as `username,email,realm` are appended only if configured.
-With `METHOD=GET` the same fields become query parameters:
+With `METHOD=GET` the same fields become query parameters, which means the number ends
+up in the backend's and any proxy's access logs; prefer `POST` for that reason.
 
 ```
 GET /verify?number=123456&userId=8f3c1e2a-...
@@ -228,7 +231,10 @@ true
 Auto-detection is a convenience for getting started. In production, set **Response
 field** explicitly so an unexpected response shape fails instead of being guessed at.
 Response bodies larger than the server's `max-consumed-response-size` (10 MB by
-default) are rejected.
+default) are rejected. Redirects are never followed, so the API key cannot be sent to a
+host of the backend's choosing. Connecting is capped at 10 s unless the server-wide
+HTTP client sets its own `establish-connection-timeout-millis`; the socket timeout is
+the server-wide one (5 s by default).
 
 A `404` is treated as a clean "not verified". Other non-2xx responses, unreachable
 services, or unparseable bodies **fail closed** — the user sees a "temporarily

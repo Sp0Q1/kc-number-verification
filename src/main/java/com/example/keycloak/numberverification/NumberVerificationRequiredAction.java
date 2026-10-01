@@ -122,9 +122,7 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         // user gets the same message as for a wrong number, so the form cannot be used to
         // find out which numbers exist; the event and the log carry the real reason.
         if (isClaimedByAnotherUser(session, realm, user, number, config)) {
-            LOG.warnf(
-                    "User %s submitted a number already bound to another account",
-                    user.getUsername());
+            LOG.warnf("User %s submitted a number already bound to another account", user.getId());
             recordFailedAttempt(context, protector);
             event.error("number_verification_already_used");
             challengeWithFieldError(context, config, "numberVerificationInvalid");
@@ -135,7 +133,7 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
         try {
             verified = new VerificationClient(config).verify(session, realm, user, number);
         } catch (VerificationClient.VerificationException e) {
-            LOG.errorf(e, "Number verification failed for user %s", user.getUsername());
+            LOG.errorf(e, "Number verification failed for user %s", user.getId());
             event.error("number_verification_unavailable");
             // Fail closed: the user cannot proceed while the service is down.
             challengeWithError(context, config, "numberVerificationUnavailable");
@@ -148,7 +146,7 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
                     .error("number_verification_rejected");
 
             if (config.maxAttempts() > 0 && attempts >= config.maxAttempts()) {
-                LOG.warnf("User %s exhausted number verification attempts", user.getUsername());
+                LOG.warnf("User %s exhausted number verification attempts", user.getId());
                 context.failure();
                 return;
             }
