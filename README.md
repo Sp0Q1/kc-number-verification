@@ -205,6 +205,35 @@ login by an account without the `numberVerified` attribute re-adds the action. T
 off to rely on the default-action flag alone, so only accounts created afterwards are
 asked.
 
+## If administrators get locked out
+
+With **Apply to existing users** on, every account in the realm is challenged at its
+next login, including the administrators. If no administrator can log in any more,
+switch the action off through the Admin REST API with a token that does not go through
+the browser flow (a client-credentials token: a service-account client with the
+`realm-admin` role, or on Phase Two the Management API's deployment token exchange).
+Required actions never apply to client-credentials logins.
+
+```bash
+BASE=https://$KC_HOST/admin/realms/$REALM          # add /auth before /admin on legacy paths
+# 1. turn the realm-level action off: every redirect stops immediately
+curl -s -H "Authorization: Bearer $TOKEN" $BASE/authentication/required-actions/verify-number \
+  | python3 -c 'import sys,json;d=json.load(sys.stdin);d["enabled"]=False;d["defaultAction"]=False;print(json.dumps(d))' \
+  | curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+      $BASE/authentication/required-actions/verify-number -d @-
+# 2. remove the pending step from an account (it stays pending otherwise)
+ID=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/users?username=admin&exact=true" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
+curl -s -H "Authorization: Bearer $TOKEN" $BASE/users/$ID \
+  | python3 -c 'import sys,json;u=json.load(sys.stdin);u["requiredActions"]=[a for a in u.get("requiredActions",[]) if a!="verify-number"];print(json.dumps(u))' \
+  | curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" $BASE/users/$ID -d @-
+```
+
+Removing the JAR does **not** stop the redirects: Keycloak sends users to any pending
+required action whose realm-level row is enabled, and without the provider the step
+then fails. Disable the row first. To avoid the situation altogether, administer realms
+from a master-realm account and keep **Apply to existing users** off unless the backend
+knows every existing account.
+
 ## Backend API contract
 
 The endpoint must be `https://`. Plain `http://` is refused at startup and on save
