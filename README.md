@@ -110,7 +110,7 @@ environment-variable deployment keeps working unchanged after upgrading.
 | Number pattern | – | Optional regular expression the whole input must match |
 | Store number as attribute | – | Save the verified number under this attribute |
 | Enforce local uniqueness | `false` | Reject a number already bound to another account |
-| Apply to existing users | `true` | Also ask accounts that predate the action, at their next login |
+| Apply to existing users | `false` | Also ask accounts that predate the action, at their next login |
 | Allow plain http endpoint | `false` | Permit an `http://` endpoint; off means https only |
 
 Values are validated on save: a malformed URL, an unknown identifier source, or
@@ -136,7 +136,7 @@ NUMBER_VERIFICATION_MAX_LENGTH=64
 NUMBER_VERIFICATION_PATTERN=[0-9]{6,12}
 NUMBER_VERIFICATION_STORE_ATTRIBUTE=verifiedNumber
 NUMBER_VERIFICATION_ENFORCE_UNIQUE=true
-NUMBER_VERIFICATION_APPLY_TO_EXISTING_USERS=true
+NUMBER_VERIFICATION_APPLY_TO_EXISTING_USERS=false
 NUMBER_VERIFICATION_ALLOW_INSECURE_HTTP=false
 ```
 
@@ -200,10 +200,10 @@ curl -X PUT "$KC/admin/realms/$REALM/authentication/required-actions/verify-numb
        "maxAttempts":"5"}}'
 ```
 
-Existing users are covered too: with **Apply to existing users** on (the default), any
-login by an account without the `numberVerified` attribute re-adds the action. Turn it
-off to rely on the default-action flag alone, so only accounts created afterwards are
-asked.
+Existing users are not asked unless you turn **Apply to existing users** on; then any
+login by an account without the `numberVerified` attribute re-adds the action, for
+administrators in the realm too. It is off by default so that enabling the action can
+never lock out the people configuring it.
 
 ## If administrators get locked out
 
