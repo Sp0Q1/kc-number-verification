@@ -203,11 +203,12 @@ public class NumberVerificationRequiredActionFactory implements RequiredActionFa
                 .name(VerificationConfig.APPLY_TO_EXISTING_USERS)
                 .label("Apply to existing users")
                 .helpText(
-                        "On: every account that has not been verified is asked at its next login. "
-                                + "Off: only accounts created after this action was made a default "
-                                + "action are asked.")
+                        "Off: only accounts created after this action was made a default action, or"
+                            + " that had it added by hand, are asked. On: every account that has"
+                            + " not been verified is asked at its next login - including"
+                            + " administrators in this realm, so make sure the backend knows them.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                .defaultValue("true")
+                .defaultValue("false")
                 .add()
                 .build();
     }

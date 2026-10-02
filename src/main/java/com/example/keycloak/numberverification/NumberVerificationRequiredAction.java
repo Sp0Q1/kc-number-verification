@@ -55,8 +55,8 @@ public class NumberVerificationRequiredAction implements RequiredActionProvider 
 
     /**
      * Runs on every authentication. New accounts already carry the action because the factory is
-     * registered as a default action; with "apply to existing users" on, this also catches
-     * pre-existing accounts that have never been verified.
+     * registered as a default action; only with "apply to existing users" switched on (off by
+     * default) does this also catch pre-existing accounts that have never been verified.
      */
     @Override
     public void evaluateTriggers(RequiredActionContext context) {

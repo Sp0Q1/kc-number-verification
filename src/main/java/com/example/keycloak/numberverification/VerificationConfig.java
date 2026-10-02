@@ -76,7 +76,7 @@ public record VerificationConfig(
                     null,
                     false,
                     null,
-                    true,
+                    false,
                     false);
 
     public enum Method {
